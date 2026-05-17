@@ -1,0 +1,67 @@
+@page "/"
+@using LoRaPTT.ViewModels
+@inject MainViewModel VM
+
+<div class="container-fluid d-flex flex-column align-items-center justify-content-center vh-100">
+
+    <!-- 狀態列 -->
+    <div class="mb-4 text-center">
+        <span class="badge @(VM.IsConnected ? "bg-success" : "bg-secondary") fs-6">
+            @(VM.IsConnected ? "● 已連線" : "○ 未連線")
+        </span>
+        <p class="mt-2 text-muted">@VM.StatusMessage</p>
+    </div>
+
+    <!-- PTT 按鈕 -->
+    <button class="btn btn-ptt rounded-circle @(VM.IsPttActive ? "active" : "")"
+            @onmousedown="OnPttDown"
+            @onmouseup="OnPttUp"
+            @ontouchstart="OnPttDown"
+            @ontouchend="OnPttUp"
+            disabled="@(!VM.IsConnected)">
+        <span class="ptt-icon">🎙️</span>
+        <span class="ptt-label">@(VM.IsPttActive ? "傳送中" : "按住說話")</span>
+    </button>
+
+    <!-- 連線按鈕 -->
+    <button class="btn btn-outline-primary mt-5"
+            @onclick="VM.ConnectCommand.ExecuteAsync"
+            disabled="@VM.IsConnected">
+        @(VM.IsConnected ? "已連線" : "連接 LoRa 裝置")
+    </button>
+
+</div>
+
+<style>
+    .btn-ptt {
+        width: 180px;
+        height: 180px;
+        background: #dc3545;
+        border: 4px solid #a71d2a;
+        color: white;
+        font-size: 1rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.1s, background 0.1s;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    .btn-ptt.active {
+        background: #198754;
+        border-color: #146c43;
+        transform: scale(0.95);
+    }
+    .btn-ptt:disabled {
+        background: #6c757d;
+        border-color: #565e64;
+    }
+    .ptt-icon { font-size: 2.5rem; }
+    .ptt-label { font-size: 0.85rem; margin-top: 4px; }
+</style>
+
+@code {
+    private async Task OnPttDown() => await VM.PttPressCommand.ExecuteAsync(null);
+    private async Task OnPttUp()   => await VM.PttReleaseCommand.ExecuteAsync(null);
+}

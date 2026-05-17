@@ -1,0 +1,24 @@
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+
+# .NET / MAUI
+app/**/bin/
+app/**/obj/
+app/**/*.user
+app/.vs/
+*.suo
+*.userprefs
+
+# Codec2 build artifacts
+app/libs/codec2/**/*.o
+app/libs/codec2/**/*.a
+app/libs/codec2/**/*.so
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code（本機設定不需同步）
+.claude/settings.local.json

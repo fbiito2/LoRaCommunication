@@ -6,42 +6,99 @@
 
 ## 硬體規格
 
-- **模組：** Unit C6L（M5Stack）
-  - MCU: ESP32-C6（WiFi 6 + BLE 5）
-  - LoRa: SX1262
-  - 頻段: 920-925 MHz（台灣 ISM）
-- **數量：** 2 組（一端一個）
-- **天線：** 920MHz LoRa 天線 × 2（確認 SMA / IPEX 接頭）
-- **手機：** Android / iOS，內建麥克風與喇叭，支援 BLE
+- **模組：** Unit C6L（M5Stack，型號 U202）
+  - MCU: ESP32-C6（RISC-V 雙核，主核 160MHz + 低功耗核 20MHz）
+  - LoRa: SX1262（發射功率 +22dBm，接收靈敏度 -147dBm）
+  - 頻段: 868~923 MHz（台灣 ISM 使用 920-925 MHz）
+  - WiFi 6（2.4GHz）+ BLE 5 + Zigbee 3.0
+  - Flash: 16MB SPI Flash
+  - 介面: USB Type-C（供電 5V + USB Serial CDC）
+  - 擴展: Grove HY2.0-4P 接口（PORT.A）
+    - GND（黑線）
+    - 5V 電源輸入/輸出（紅線）
+    - GPIO5（黃線，可作 I2C SCL / UART TX / 通用 GPIO）
+    - GPIO4（白線，可作 I2C SDA / UART RX / 通用 GPIO）
+  - 顯示: 0.66" OLED 單色螢幕（SSD1306, 64×48 解析度）
+  - 互動: 使用者按鈕 × 1、蜂鳴器 × 1、WS2812C RGB LED × 1
+  - 天線: RP-SMA 天線接口 × 2（2.4GHz WiFi 用 + LoRa 用，各一）
+  - 尺寸: 62 × 24 × 8 mm
+  - 功耗:
+    - 睡眠（Grove 供電）: 696.86 μA
+    - 睡眠（USB-C 供電）: 866.42 μA
+    - LoRa RX 待機: ~85 mA
+    - LoRa 最大功率連續發射: ~80 mA
+  - 隨附: RP-SMA 天線 × 2（WiFi 3dBi + LoRa 3dBi）、Grove 連接線（20cm）
+- **數量：** 至少 2 組（一端一個，中繼另加）
+- **外接天線：** 如需增強收訊，直接更換 RP-SMA 接口的高增益天線（5dBi+）即可，不需轉接
+- **手機：** Android / iOS，內建麥克風與喇叭，支援 WiFi
+- **不需要擴展板** — C6L 已整合 WiFi + LoRa + USB-C + OLED + 按鈕，一條 USB-C 線即可
+
+## 使用模式
+
+C6L 支援兩種使用模式，硬體完全相同，差別只在供電來源和通訊方式：
+
+### 攜帶模式（USB-C 接手機）
+
+```
+┌──────────┐
+│   手機    │
+│ 供電+通訊 │
+│   USB-C   │
+│     │     │
+│  ┌──────┐ │
+│  │ C6L  │ │
+│  └──────┘ │
+└──────────┘
+隨身帶著走
+```
+
+- USB-C 接手機，手機供電 + USB Serial（CDC）通訊
+- 低延遲、穩定、不佔 WiFi
+- 適合移動中使用
+
+### 基站模式（USB-C 接行動電源）
+
+```
+行動電源 ──USB-C──→ C6L ──WiFi──→ 手機（可在數十公尺外）
+                     │
+                   LoRa 收發
+                   可架高處增強收訊
+```
+
+- USB-C 接行動電源，行動電源供電
+- C6L 開 WiFi AP 熱點，手機連上後以 UDP 通訊
+- 手機可離開數十公尺，C6L 可架高處增強 LoRa 收訊
+- 適合定點/營地/車上
 
 ## 系統架構
 
 ### 直連模式
 
 ```
-手機A（錄音/播放） ←BLE→ C6L(A) ←LoRa 920MHz→ C6L(B) ←BLE→ 手機B（錄音/播放）
+手機A（錄音/播放） ←USB-C→ C6L(A) ←LoRa 920MHz→ C6L(B) ←USB-C→ 手機B（錄音/播放）
 ```
 
 ### 中繼模式（超出直連範圍時）
 
 ```
-手機A ←BLE→ C6L(A) ←LoRa→ C6L(R) 中繼 ←LoRa→ C6L(B) ←BLE→ 手機B
-                              │
-                          不接手機，USB 供電
-                          純轉發封包
+手機A ←USB-C→ C6L(A) ←LoRa→ C6L(R) 中繼 ←LoRa→ C6L(B) ←USB-C→ 手機B
+                                │
+                            行動電源供電
+                            純轉發封包
 ```
 
 ### 群組通話模式（節點同時通訊+中繼）
 
 ```
-手機A ←BLE→ C6L(A) ←──LoRa──→ C6L(B) ←──LoRa──→ C6L(C) ←BLE→ 手機C
-                                  ↑
-                                 BLE
-                                  ↓
-                                手機B（同時通話 + 中繼）
+手機A ←USB-C→ C6L(A) ←──LoRa──→ C6L(B) ←──LoRa──→ C6L(C) ←USB-C→ 手機C
+                                    ↑
+                                USB-C 或 WiFi
+                                    ↓
+                                  手機B（同時通話 + 中繼）
 ```
 
-- C6L 作為 BLE ↔ LoRa 透傳橋接器（bridge）
+- C6L 作為 USB Serial/WiFi ↔ LoRa 透傳橋接器（bridge）
+- 手機與 C6L 的連線方式：攜帶模式用 USB Serial（CDC）、基站模式用 WiFi UDP
 - 所有音訊處理（錄音、編碼、解碼、播放）在手機端完成
 - 不需要外接麥克風或喇叭模組
 - 每個節點可同時當中繼，也可部署中繼專用節點
@@ -62,7 +119,7 @@
 - 一次只有一端在傳送
 - 簡化 LoRa 收發邏輯，避免碰撞
 
-### BLE 資料量評估
+### 通訊資料量評估
 
 | 項目 | 數值 |
 |------|------|
@@ -70,8 +127,110 @@
 | 每包 payload（200ms） | ~60 bytes |
 | 封包 overhead（header 8B + MAC 4B） | +12 bytes |
 | 加密後每包總大小 | ~72 bytes |
-| BLE 5.0 單包上限 | ~244 bytes ✅ |
+| USB Serial 單次傳輸 | 無實質限制 ✅ |
+| WiFi UDP 單包上限 | ~65507 bytes ✅ |
 | LoRa 單包上限 | ~255 bytes ✅ |
+
+### 雙模通訊：USB Serial / WiFi
+
+手機與 C6L 之間的通訊根據使用模式自動切換：
+
+**韌體自動偵測邏輯：**
+
+```
+開機
+  → 偵測 USB 資料線是否連接手機（USB CDC DTR 訊號）
+      → 有 DTR → 攜帶模式：啟用 USB Serial（CDC）
+      → 無 DTR → 基站模式：啟用 WiFi AP + UDP
+```
+
+**攜帶模式 — USB Serial（CDC）：**
+- 透過 USB-C 直接以 Serial 通訊，同時由手機供電
+- 延遲極低、最穩定、不佔無線頻寬
+- Android 手機需 USB OTG 支援（絕大多數都有）
+- APP 端使用 USB Serial library 讀寫
+
+**基站模式 — WiFi AP + UDP：**
+- C6L 開 WiFi 熱點（SSID 如 `LoRaPTT_A`，密碼可透過 APP 設定）
+- 手機連上該 WiFi 後以 UDP 傳輸資料（port 5000）
+- 封包格式與 USB Serial 完全一致，只是傳輸層不同
+- 不需外部路由器，野外也能用
+
+**為什麼語音用 UDP 而非 TCP：**
+
+| | UDP | TCP / WebSocket |
+|---|---|---|
+| 延遲 | 低（無重傳機制） | 高（等待重傳） |
+| 丟包處理 | 丟了就算（語音可容忍） | 會卡住等重傳 |
+| 適合語音 | ✅ | ❌ |
+
+**韌體通訊抽象介面（C++ 端）：**
+
+USB Serial 和 WiFi 共用同一個介面，LoRa handler 不需知道上層用哪種連線：
+
+```cpp
+// comm_interface.h — 通訊抽象介面
+class ICommInterface {
+public:
+    virtual void begin() = 0;
+    virtual void send(const uint8_t* data, size_t len) = 0;
+    virtual void onReceive(std::function<void(const uint8_t*, size_t)> callback) = 0;
+    virtual bool isConnected() = 0;
+    virtual ~ICommInterface() = default;
+};
+```
+
+### WiFi AP 設定流程
+
+C6L 在基站模式下是自己開熱點（AP），不是去連別人的 WiFi，所以**不需要在 C6L 上輸入密碼或選 WiFi**。
+
+**預設值（韌體出廠設定）：**
+- SSID: `LoRaPTT_{DEVICE_ID}`（如 `LoRaPTT_A01B`）
+- 密碼: 預設固定值（如 `loraptt2026`）
+- UDP Port: 5000
+
+**修改設定的方式：**
+
+1. **透過 APP（主要方式）：** 攜帶模式下 USB-C 接手機，APP 送設定指令，C6L 儲存到 Flash（NVS）
+2. **透過 OLED + 按鈕（輔助方式）：** 韌體提供簡易選單，可查看/切換基本設定
+3. 設定一次存入 ESP32-C6 的 NVS（Non-Volatile Storage），斷電不遺失
+
+**APP 設定指令格式（透過 USB Serial 傳送）：**
+
+```
+{"cmd":"set_config","wifi_ssid":"LoRaPTT_A","wifi_pass":"mypassword","device_name":"Node_A","lora_freq":920}
+```
+
+C6L 收到後寫入 NVS，回應 `{"status":"ok"}`，下次開機生效。
+
+### OLED 顯示與按鈕互動
+
+C6L 內建 0.66" OLED（SSD1306, 64×48）和一顆使用者按鈕，韌體實作簡易 HMI：
+
+**顯示頁面（短按按鈕切換）：**
+
+```
+頁面1：狀態           頁面2：網路           頁面3：LoRa
+┌────────────┐      ┌────────────┐      ┌────────────┐
+│ LoRaPTT    │      │ WiFi: ON   │      │ Freq: 920M │
+│ Mode: USB  │      │ SSID:      │      │ SF: 7      │
+│ Peer: 2    │      │ LoRaPTT_A  │      │ BW: 500k   │
+│ ▓▓▓▓░ Batt │      │ IP:192.4.1 │      │ TX: +22dBm │
+└────────────┘      └────────────┘      └────────────┘
+```
+
+**按鈕操作：**
+- 短按：切換顯示頁面
+- 長按 3 秒：切換攜帶/基站模式（切換後 RGB LED 變色提示 + 蜂鳴器嗶一聲）
+- 長按 6 秒：重置 WiFi 設定為出廠預設值
+
+**RGB LED 狀態指示：**
+- 綠色常亮：攜帶模式，USB 已連線
+- 藍色常亮：基站模式，WiFi AP 已啟動
+- 藍色閃爍：基站模式，等待手機連入
+- 紅色閃爍：LoRa 發送中
+- 黃色閃爍：LoRa 接收中
+- 紅色常亮：錯誤狀態
 
 ## 安全機制
 
@@ -106,7 +265,7 @@ LoRa 是開放頻段無線電，任何同頻段接收器都能收到封包，需
 | DST_ID | 2 bytes | 目標接收者 ID（0xFFFF = 廣播） |
 | HOP | 1 byte | 剩餘跳數，每次中繼轉發減 1，歸 0 丟棄（預設 MAX_HOP = 3） |
 | SEQ | 2 bytes | 遞增封包序號，作為 AES-CTR nonce 一部分，防重放 |
-| TYPE | 1 byte | 0x01=文字, 0x02=語音, 0x03=控制/心跳 |
+| TYPE | 1 byte | 0x01=文字, 0x02=語音, 0x03=控制/心跳, 0x04=感測器資料 |
 | PAYLOAD | N bytes | AES-128-CTR 加密後的資料（文字或 Codec2 語音幀） |
 | MAC | 4 bytes | HMAC-SHA256 截斷，對整個封包（含明文區+加密區）計算 |
 
@@ -130,14 +289,14 @@ LoRa 是開放頻段無線電，任何同頻段接收器都能收到封包，需
 3. 檢查 SEQ 是否大於該 SRC_ID 上次收到的序號（防重放）
 4. 驗證 MAC：對「明文 header + 加密 payload」計算 HMAC，比對 MAC 欄位
 5. MAC 驗證通過 → 判斷 DST_ID：
-   - 是自己或廣播 → AES-128-CTR 解密 payload → 交給 BLE
+   - 是自己或廣播 → AES-128-CTR 解密 payload → 交給手機（USB Serial 或 WiFi）
    - 不是自己且 HOP > 0 → 進入中繼轉發流程（見 Mesh Relay 章節）
 6. 更新該 SRC_ID 的最後序號記錄
 
 ### 金鑰管理
 
 - **初始版本：** PSK 寫死在韌體中（兩台燒同一組），適合個人使用
-- **未來擴展：** 可透過 BLE 安全通道（加密配對後）從 APP 下發金鑰，支援換鑰
+- **未來擴展：** 可透過 USB Serial 或 WiFi 安全通道從 APP 下發金鑰，支援換鑰
 
 ## 電源管理
 
@@ -185,13 +344,11 @@ SX1262 硬體自主計時醒來，偵測 LoRa preamble（前導碼），無訊�
 **待機模式（等待來訊）：**
 - SX1262：RxDutyCycle，週期 1 秒
 - ESP32-C6：light sleep，由 SX1262 DIO1 中斷喚醒
-- BLE：維持低功耗連線（Connection Interval 拉長）
 - 整機平均功耗極低
 
 **通話模式（PTT 進行中）：**
 - SX1262：連續 RX（即時收語音封包，不能漏幀）
-- ESP32-C6：全速運行，處理加解密與 BLE 轉發
-- BLE：Connection Interval 縮短，確保語音資料即時傳輸
+- ESP32-C6：全速運行，處理加解密與資料轉發
 - 通話結束後（放開 PTT + 3 秒無封包）→ 自動退回待機模式
 
 ### Preamble 策略
@@ -207,7 +364,7 @@ SX1262 硬體自主計時醒來，偵測 LoRa preamble（前導碼），無訊�
 當兩端距離超出 LoRa 單跳傳輸範圍，可在中間放置一或多台 C6L 作為中繼節點，自動轉發封包：
 
 ```
-手機A ←BLE→ C6L(A) ←LoRa→ C6L(R) 中繼 ←LoRa→ C6L(B) ←BLE→ 手機B
+手機A ←USB-C→ C6L(A) ←LoRa→ C6L(R) 中繼 ←LoRa→ C6L(B) ←USB-C→ 手機B
                               │
                           不接手機
                           純轉發封包
@@ -222,7 +379,7 @@ SX1262 硬體自主計時醒來，偵測 LoRa preamble（前導碼），無訊�
 收到 LoRa 封包
   → 驗證 MAC（確認封包完整性，防止轉發垃圾封包）
   → 檢查 SRC_ID + SEQ 是否已轉發過（去重，防止迴圈）
-  → DST_ID 是自己？→ 交給 BLE 處理
+  → DST_ID 是自己？→ 交給手機處理
   → DST_ID 不是自己（含廣播 0xFFFF）？
       → HOP > 0？→ HOP-- → 重新 LoRa 發送（轉發）
       → HOP == 0？→ 丟棄
@@ -234,7 +391,7 @@ SX1262 硬體自主計時醒來，偵測 LoRa preamble（前導碼），無訊�
 
 ```
 收到 LoRa 封包
-  → DST_ID 是自己或廣播？→ 處理（解密 + 交給 BLE）
+  → DST_ID 是自己或廣播？→ 處理（解密 + 交給手機）
   → 同時如果 HOP > 0 且 relay_enabled = true → 也轉發
 ```
 
@@ -258,13 +415,13 @@ SX1262 硬體自主計時醒來，偵測 LoRa preamble（前導碼），無訊�
 
 ### 節點模式設定
 
-韌體透過編譯旗標或 BLE 指令切換模式：
+韌體透過編譯旗標或 USB Serial 指令切換模式：
 
 | 設定項 | 一般節點 | 中繼專用節點 |
 |--------|---------|------------|
-| BLE Server | 開啟 | 關閉（省資源） |
+| 手機通訊 | USB Serial 或 WiFi | 關閉（省資源） |
 | relay_enabled | 可選 | 強制開啟 |
-| 供電方式 | 電池 / USB | USB 長期供電（或太陽能） |
+| 供電方式 | USB-C 接手機或行動電源 | Grove 5V 或 USB-C（長期供電） |
 | 手機連接 | 需要 | 不需要 |
 | RxDutyCycle | 待機時啟用 | 可啟用（無通話時省電） |
 
@@ -275,14 +432,59 @@ SX1262 硬體自主計時醒來，偵測 LoRa preamble（前導碼），無訊�
 - 城市環境建議每 1~3 km 一個中繼節點
 - 空曠地形單跳可達 5~15 km，中繼需求較低
 
+### 中繼節點 Grove 供電部署方案
+
+中繼節點建議使用 Grove 接口供電，睡眠功耗比 USB-C 更低（696μA vs 866μA），適合長期無人值守：
+
+**方案 A — 太陽能自給自足（戶外長期部署）：**
+
+```
+太陽能板（5V）→ 充電控制器 → 18650 鋰電池
+                                    │
+                              Grove 5V + GND
+                                    │
+                                 C6L（中繼）
+                                    │
+                              RP-SMA 高增益天線
+                                    │
+                              架在屋頂/山上
+```
+
+**方案 B — 行動電源簡易部署（臨時中繼）：**
+
+```
+行動電源 ──Grove 轉接線──→ C6L（中繼）
+           5V + GND
+```
+
+**Grove 供電接線方式：**
+- 紅線 → 5V（電源正極）
+- 黑線 → GND（接地）
+- 黃線（G5）、白線（G4）→ 不接（中繼節點不需要）
+
+如需同時接感測器（如溫濕度、GPS），G4/G5 可作 I2C 使用，中繼節點順便回傳環境資料。
+
+### Grove 接口擴展應用（選配）
+
+Grove 的 G4（I2C SDA）/ G5（I2C SCL）可接 M5Stack 生態系感測器模組：
+
+| 感測器模組 | 用途 | 適用場景 |
+|-----------|------|---------|
+| ENV III（SHT30 + QMP6988） | 溫度、濕度、氣壓 | 中繼節點兼氣象站 |
+| GPS 模組（UART） | 位置資訊 | 移動節點回報座標 |
+| PIR 人體感測 | 移動偵測 | 遠端監控警報 |
+| Light Sensor | 環境光線 | 太陽能充電狀態監測 |
+
+感測器資料可透過 LoRa 封包（TYPE=0x04 感測器資料）夾帶回傳。
+
 ### 廣播群組通話（通訊+中繼同時運作）
 
 一般節點可以同時作為通話端和中繼端。典型場景：A、B、C 三點通訊，A-C 距離過遠無法直連，B 同時通話並中繼。
 
 ```
-手機A ←BLE→ C6L(A) ←──LoRa──→ C6L(B) ←──LoRa──→ C6L(C) ←BLE→ 手機C
+手機A ←USB-C→ C6L(A) ←──LoRa──→ C6L(B) ←──LoRa──→ C6L(C) ←USB-C→ 手機C
                                   ↑
-                                 BLE
+                              USB-C 或 WiFi
                                   ↓
                                 手機B（B 同時通話 + 中繼）
 ```
@@ -292,7 +494,7 @@ SX1262 硬體自主計時醒來，偵測 LoRa preamble（前導碼），無訊�
 ```
 收到 LoRa 封包，DST_ID = 0xFFFF（廣播）
   → MAC 驗證通過 + SRC_ID 不是自己 + 去重檢查通過
-  → ① 自己處理：解密 payload → BLE Notify → 手機播放
+  → ① 自己處理：解密 payload → 推送 → 手機播放
   → ② 同時轉發：HOP > 0？→ HOP-- → LoRa 重發（不需解密 payload）
   → 兩步驟順序執行，先處理再轉發（確保本地播放不被轉發延遲影響）
 ```
@@ -328,10 +530,32 @@ APP 端可讓使用者選擇通話模式：群組廣播或指定對象。
 
 ### 框架：Arduino + ESP-IDF
 
-- **功能：** 純粹 BLE ↔ LoRa 雙向透傳
-- **BLE：** 作為 GATT Server，提供 Write（手機→C6L）和 Notify（C6L→手機）Characteristic
-- **LoRa：** 使用 SX1262 驅動，收到 BLE 資料就 LoRa 發送，收到 LoRa 資料就 BLE Notify
+- **功能：** USB Serial/WiFi ↔ LoRa 雙向透傳，支援攜帶模式（USB CDC）與基站模式（WiFi AP + UDP）
+- **攜帶模式：** USB Serial（CDC），透過 USB-C 直接與手機通訊，延遲最低
+- **基站模式：** WiFi AP 熱點 + UDP Server（port 5000），手機連上 WiFi 後以 UDP 收發
+- **通訊抽象：** USB Serial 和 WiFi 實作共同的 ICommInterface，LoRa handler 不需知道上層連線方式
+- **LoRa：** 使用 SX1262 驅動，收到手機資料就 LoRa 發送，收到 LoRa 資料就推給手機
+- **HMI：** OLED 顯示狀態 + 按鈕切換頁面/模式 + RGB LED 狀態指示 + 蜂鳴器提示
+- **設定：** 透過 USB Serial 接收 JSON 設定指令，儲存到 NVS（Non-Volatile Storage）
 - **不使用 Meshtastic 韌體**（Meshtastic 不支援語音串流，自寫精簡韌體延遲更低）
+
+### PlatformIO 配置參考
+
+```ini
+[env:m5stack-unitc6l]
+platform = https://github.com/pioarduino/platform-espressif32/archive/refs/heads/develop.zip
+board = esp32-c6-devkitc-1
+framework = arduino
+upload_speed = 1500000
+monitor_speed = 115200
+build_flags =
+    -D ARDUINO_USB_MODE=1
+    -DARDUINO_USB_CDC_ON_BOOT=1
+lib_deps =
+    M5Unified=https://github.com/m5stack/M5Unified
+```
+
+注意：刷韌體時需按住側邊 Reset 按鈕 3 秒直到綠燈變紅，進入下載模式。
 
 ### 韌體目錄結構
 
@@ -339,13 +563,19 @@ APP 端可讓使用者選擇通話模式：群組廣播或指定對象。
 firmware/
 ├── platformio.ini
 ├── src/
-│   ├── main.cpp             # 主程式：初始化 BLE + LoRa + Crypto
-│   ├── ble_service.h/.cpp   # BLE GATT Server
-│   ├── lora_handler.h/.cpp  # SX1262 LoRa 收發
-│   ├── crypto.h/.cpp        # AES-128-CTR 加解密 + HMAC 驗證（mbedtls）
-│   ├── packet.h/.cpp        # 封包格式定義、組包/解包（含 SRC_ID/DST_ID/HOP）
-│   ├── relay.h/.cpp         # 中繼轉發邏輯、去重快取（ring buffer）
-│   └── power_mgr.h/.cpp     # 電源狀態機：待機↔通話模式切換、RxDutyCycle 控制
+│   ├── main.cpp                   # 主程式：偵測模式（DTR）+ 初始化各模組
+│   ├── comm_interface.h           # 通訊抽象介面（ICommInterface）
+│   ├── usb_serial_service.h/.cpp  # USB Serial CDC（攜帶模式，實作 ICommInterface）
+│   ├── wifi_service.h/.cpp        # WiFi AP + UDP Server（基站模式，實作 ICommInterface）
+│   ├── lora_handler.h/.cpp        # SX1262 LoRa 收發
+│   ├── crypto.h/.cpp              # AES-128-CTR 加解密 + HMAC 驗證（mbedtls）
+│   ├── packet.h/.cpp              # 封包格式定義、組包/解包（含 SRC_ID/DST_ID/HOP）
+│   ├── relay.h/.cpp               # 中繼轉發邏輯、去重快取（ring buffer）
+│   ├── power_mgr.h/.cpp           # 電源狀態機：待機↔通話模式切換、RxDutyCycle 控制
+│   ├── display.h/.cpp             # OLED SSD1306 顯示（狀態頁面、設定頁面）
+│   ├── button.h/.cpp              # 按鈕處理（短按切頁、長按切模式、超長按重置）
+│   ├── led.h/.cpp                 # WS2812C RGB LED 狀態指示
+│   └── config.h/.cpp              # NVS 設定管理（WiFi SSID/密碼、裝置名稱、LoRa 參數）
 └── lib/
 ```
 
@@ -354,14 +584,54 @@ firmware/
 ### 框架：.NET MAUI Blazor Hybrid
 
 - 支援 Android + iOS
-- BLE 通訊使用 Plugin.BLE（NuGet: Plugin.BLE）
+- USB Serial 通訊使用 UsbSerialForAndroid（NuGet），iOS 用 ExternalAccessory
+- WiFi UDP 通訊使用 `System.Net.Sockets.UdpClient`
+
+### 通訊抽象介面
+
+USB Serial 和 WiFi 實作同一個 `ICommService` 介面，APP 不需關心底層連線方式：
+
+```csharp
+/// <summary>
+/// 通訊服務介面 — USB Serial 與 WiFi 共用
+/// </summary>
+public interface ICommService
+{
+    /// <summary>連線到 C6L 裝置</summary>
+    Task ConnectAsync(CancellationToken ct);
+
+    /// <summary>中斷連線</summary>
+    Task DisconnectAsync();
+
+    /// <summary>發送資料到 C6L</summary>
+    Task SendAsync(byte[] data, CancellationToken ct);
+
+    /// <summary>收到 C6L 資料時觸發</summary>
+    event Action<byte[]> OnDataReceived;
+
+    /// <summary>目前是否已連線</summary>
+    bool IsConnected { get; }
+
+    /// <summary>目前通訊模式</summary>
+    CommMode Mode { get; }
+}
+
+/// <summary>通訊模式列舉</summary>
+public enum CommMode
+{
+    /// <summary>攜帶模式 — USB Serial（CDC）連線</summary>
+    UsbSerial,
+    /// <summary>基站模式 — WiFi UDP 連線</summary>
+    WiFi
+}
+```
 
 ### APP 模組
 
-1. **BLE 通訊模組**
-   - 掃描並連接 C6L
-   - 訂閱 Notify Characteristic（接收 LoRa 資料）
-   - 寫入 Write Characteristic（傳送資料給 LoRa）
+1. **通訊模組（雙模）**
+   - `UsbSerialCommService`：偵測 USB-C 連接的 C6L、Serial 讀寫（攜帶模式）
+   - `WiFiCommService`：連接 C6L WiFi AP、UDP 收發（基站模式）
+   - APP 啟動時偵測 USB 裝置和 WiFi SSID，讓使用者選擇或自動判斷連線方式
 
 2. **音訊錄製模組（平台原生）**
    - Android: `AudioRecord`（PCM 16-bit, 8000Hz, Mono）
@@ -376,8 +646,8 @@ firmware/
 4. **Codec2 編解碼模組**
    - 將 Codec2 C 原始碼編譯為 native library（.so / .dylib）
    - MAUI 用 P/Invoke 呼叫
-   - 錄音 PCM → Codec2 encode → BLE 傳送
-   - BLE 接收 → Codec2 decode → PCM 播放
+   - 錄音 PCM → Codec2 encode → 透過 ICommService 傳送
+   - ICommService 接收 → Codec2 decode → PCM 播放
 
 ### APP 目錄結構
 
@@ -387,23 +657,26 @@ app/
 ├── LoRaPTT/
 │   ├── MauiProgram.cs
 │   ├── Services/
-│   │   ├── BleService.cs         # BLE 掃描、連線、讀寫
-│   │   ├── AudioRecordService.cs # 平台錄音抽象
-│   │   ├── AudioPlayService.cs   # 平台播放抽象
-│   │   └── Codec2Service.cs      # P/Invoke Codec2
+│   │   ├── ICommService.cs           # 通訊抽象介面（USB Serial / WiFi 共用）
+│   │   ├── UsbSerialCommService.cs   # USB Serial CDC 實作（攜帶模式）
+│   │   ├── WiFiCommService.cs        # WiFi UDP 實作（基站模式，使用 UdpClient）
+│   │   ├── AudioRecordService.cs     # 平台錄音抽象
+│   │   ├── AudioPlayService.cs       # 平台播放抽象
+│   │   └── Codec2Service.cs          # P/Invoke Codec2
 │   ├── ViewModels/
-│   │   └── MainViewModel.cs      # PTT 狀態、連線狀態
+│   │   └── MainViewModel.cs          # PTT 狀態、連線狀態、模式切換
 │   ├── Pages/
-│   │   └── MainPage.razor        # PTT 按鈕 UI
+│   │   └── MainPage.razor            # PTT 按鈕 UI、連線模式選擇
 │   └── Platforms/
 │       ├── Android/
 │       │   ├── AudioRecordImpl.cs
-│       │   └── AudioPlayImpl.cs
+│       │   ├── AudioPlayImpl.cs
+│       │   └── UsbSerialImpl.cs      # Android USB OTG Serial 實作
 │       └── iOS/
 │           ├── AudioRecordImpl.cs
 │           └── AudioPlayImpl.cs
 └── libs/
-    └── codec2/                   # Codec2 native libraries
+    └── codec2/                       # Codec2 native libraries
         ├── android/
         │   ├── arm64-v8a/libcodec2.so
         │   └── x86_64/libcodec2.so
@@ -416,16 +689,16 @@ app/
 ### Phase 1：驗證硬體
 - 刷 Meshtastic 韌體到兩組 C6L
 - 用 Meshtastic 官方 App 確認 LoRa 通訊正常
-- 確認 BLE 連線穩定
+- 確認通訊連線穩定（USB Serial 或 WiFi）
 
-### Phase 2：BLE ↔ LoRa 透傳韌體
-- 寫 Arduino 韌體，實現 BLE GATT Server
+### Phase 2：USB Serial/WiFi ↔ LoRa 透傳韌體
+- 寫 Arduino 韌體，實現 USB Serial（CDC）通訊
 - 實現 LoRa 收發
-- 用手機 BLE 除錯工具（nRF Connect）測試雙向透傳
+- 用手機 Serial 終端工具或自製測試 APP 測試雙向透傳
 
 ### Phase 3：APP 文字版
 - MAUI Blazor Hybrid 專案建置
-- 整合 Plugin.BLE，連接 C6L
+- 整合 USB Serial library，連接 C6L
 - 實現文字訊息收發
 
 ### Phase 4：PTT 語音
@@ -447,17 +720,21 @@ app/
 - **註解：** 全部使用繁體中文
 - **非同步：** 所有 I/O 使用 async/await，不使用 .Result/.Wait()，CancellationToken 傳遞到最底層
 - **錯誤處理：** 不允許空 catch、使用 ILogger、錯誤訊息繁體中文
-- **BLE 相關：** 使用 Plugin.BLE NuGet 套件
+- **USB Serial 相關：** Android 使用 UsbSerialForAndroid NuGet 套件
 - **UI：** Blazor Razor Pages + Bootstrap 5
 
 ## 注意事項
 
 - 台灣 ISM 頻段 920-925 MHz 有 duty cycle 限制，語音串流需注意合規
-- BLE 連線穩定性是關鍵，需處理斷線重連邏輯
+- USB Serial（CDC）需 Android 手機支援 USB OTG，絕大多數手機都有
+- iOS 的 USB Serial 支援較受限，可能需走 WiFi 模式為主
 - Codec2 的 P/Invoke 需要分別為 Android（arm64/x86_64）和 iOS 編譯
 - LoRa 速率與距離互斥：SF 越低速率越高但距離越短，語音需要用 SF7 + BW500kHz 的高速設定
 - 中繼節點需防止封包迴圈（去重快取 + HOP 遞減歸零丟棄）
 - 中繼節點不解密 payload，只驗 MAC 後轉發，降低延遲
-- 中繼節點放置高處搭配高增益天線（5dBi+）可大幅擴展覆蓋範圍
+- 中繼節點接行動電源放高處搭配高增益天線（RP-SMA 直接更換 5dBi+ 天線）可大幅擴展覆蓋範圍
+- 中繼節點建議使用 Grove 接口供電（睡眠功耗更低），長期部署可搭配太陽能 + 18650 電池
 - 廣播群組通話時，SX1262 半雙工限制可能導致中繼節點偶爾漏包，Codec2 解碼端需做靜音填充處理
 - 群組通話使用 DST_ID = 0xFFFF 廣播，點對點私聊使用指定 DST_ID
+- 基站模式 WiFi AP 的 SSID/密碼應可透過 APP 或 USB Serial 設定，避免寫死
+- WiFi UDP 傳輸不保證送達順序，APP 端應根據封包 SEQ 排序或丟棄亂序封包

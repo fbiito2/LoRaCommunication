@@ -37,7 +37,9 @@ public:
     void loop();
 
 private:
-    SX1262  _radio{LORA_NSS, LORA_DIO1, LORA_NRST, LORA_BUSY};
+    // RadioLib 6.x：先建 Module，再用 Module 建 SX1262
+    Module  _mod{LORA_NSS, LORA_DIO1, LORA_NRST, LORA_BUSY};
+    SX1262  _radio{&_mod};
     LoRaPacketCallback _callback;
     uint16_t _myId = 0;
     uint16_t _txSeq = 0;

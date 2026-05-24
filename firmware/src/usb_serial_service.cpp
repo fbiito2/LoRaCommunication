@@ -10,8 +10,8 @@ void UsbSerialService::begin() {
 }
 
 bool UsbSerialService::isConnected() {
-    // DTR（Data Terminal Ready）：手機開啟 Serial port 時為 true
-    return Serial.available() >= 0 && Serial.dtr();
+    // ESP32-C6 HWCDC 用 operator bool() 判斷 USB 連線狀態
+    return (bool)Serial;
 }
 
 void UsbSerialService::send(const uint8_t* data, size_t len) {

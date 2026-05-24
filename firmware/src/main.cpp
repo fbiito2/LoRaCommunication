@@ -19,8 +19,9 @@ static DeviceConfig    _cfg;
 
 // ── 模式偵測：DTR 訊號判斷是否有手機連上 USB-C ─────────────
 static bool detectCarryMode() {
-    delay(200); // 等待 USB 穩定
-    return Serial.dtr();
+    delay(500); // 等待 USB 穩定
+    // ESP32-C6 HWCDC：operator bool() 為 true 代表 USB host 已連接
+    return (bool)Serial;
 }
 
 // ── 收到手機資料 → LoRa 發送 ──────────────────────────────

@@ -1,37 +1,157 @@
 #include <Arduino.h>
-#include "ble_service.h"
+#include <ArduinoJson.h>
+#include "config.h"
+#include "crypto.h"
+#include "comm_interface.h"
+#include "usb_serial_service.h"
+#include "wifi_service.h"
 #include "lora_handler.h"
+#include "relay.h"
+#include "power_mgr.h"
+#include "display.h"
+#include "button.h"
+#include "led.h"
+
+// ── 全域狀態 ──────────────────────────────────────────────
+static bool           _isCarryMode = true;  // true=USB，false=WiFi
+static ICommInterface* _comm       = nullptr;
+static DeviceConfig    _cfg;
+
+// ── 模式偵測：DTR 訊號判斷是否有手機連上 USB-C ─────────────
+static bool detectCarryMode() {
+    delay(200); // 等待 USB 穩定
+    return Serial.dtr();
+}
+
+// ── 收到手機資料 → LoRa 發送 ──────────────────────────────
+static void onCommReceived(const uint8_t* data, size_t len) {
+    PowerMgr::onActivity(); // 有活動 → 切換到通話模式
+
+    LoRaPacket pkt;
+    pkt.dstId      = DST_BROADCAST; // 預設廣播，APP 可指定目標
+    pkt.type       = PKT_TYPE_VOICE;
+    pkt.payloadLen = min(len, (size_t)PKT_MAX_PAYLOAD);
+    memcpy(pkt.payload, data, pkt.payloadLen);
+
+    Led::setLoRaTx();
+    loraHandler.sendPacket(pkt);
+    Led::setCarryMode(); // 恢復狀態 LED
+}
+
+// ── 收到 LoRa 封包（已解密）→ 推給手機 ─────────────────────
+static void onLoRaReceived(const LoRaPacket& pkt) {
+    PowerMgr::onActivity();
+    Led::setLoRaRx();
+
+    uint8_t buf[PKT_MAX_LEN];
+    size_t  len = packetSerialize(pkt, buf, sizeof(buf));
+    if (len > 0) _comm->send(buf, len);
+
+    Led::setCarryMode();
+}
+
+// ── JSON 設定指令處理（從手機 USB Serial 收到）──────────────
+static void handleConfigCmd(const char* json, size_t len) {
+    JsonDocument doc;
+    if (deserializeJson(doc, json, len) != DeserializationError::Ok) return;
+
+    const char* cmd = doc["cmd"];
+    if (!cmd) return;
+
+    if (strcmp(cmd, "set_config") == 0) {
+        if (doc["wifi_ssid"].is<const char*>())
+            strncpy(_cfg.wifiSsid, doc["wifi_ssid"], 31);
+        if (doc["wifi_pass"].is<const char*>())
+            strncpy(_cfg.wifiPass, doc["wifi_pass"], 31);
+        if (doc["device_name"].is<const char*>())
+            strncpy(_cfg.deviceName, doc["device_name"], 31);
+        if (doc["lora_freq"].is<float>())
+            _cfg.loraFreq = doc["lora_freq"];
+        configSave(_cfg);
+        // 回應手機
+        const char* resp = "{\"status\":\"ok\"}";
+        _comm->send((const uint8_t*)resp, strlen(resp));
+    }
+}
 
 void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("=== LoRa PTT Bridge 啟動 ===");
 
-    // 初始化 BLE GATT Server
-    bleService.begin();
+    // 載入設定
+    _cfg = configLoad();
+    Serial.printf("[Main] 裝置 ID: 0x%04X，名稱: %s\n",
+                  _cfg.deviceId, _cfg.deviceName);
 
-    // 手機傳來資料 → 直接 LoRa 發送
-    bleService.setRxCallback([](const uint8_t* data, size_t len) {
-        Serial.printf("[橋接] BLE → LoRa，%d bytes\n", len);
-        loraHandler.send(data, len);
+    // 初始化加密模組
+    cryptoInit(_cfg.aesKey, _cfg.hmacKey);
+
+    // 偵測使用模式（USB DTR = 攜帶模式，否則 WiFi 基站模式）
+    _isCarryMode = detectCarryMode();
+
+    if (_isCarryMode) {
+        Serial.println("[Main] 攜帶模式：USB Serial CDC");
+        usbSerialService.begin();
+        _comm = &usbSerialService;
+        Led::setCarryMode();
+        Display::isCarryMode = true;
+    } else {
+        Serial.println("[Main] 基站模式：WiFi AP + UDP");
+        wifiService.setSsid(_cfg.wifiSsid);
+        wifiService.setPassword(_cfg.wifiPass);
+        wifiService.begin();
+        _comm = &wifiService;
+        Led::setBaseWaiting();
+        Display::isCarryMode = false;
+        Display::wifiSsid    = _cfg.wifiSsid;
+        Display::wifiIp      = WiFi.softAPIP().toString();
+    }
+
+    // 手機 → C6L 資料 → LoRa 發送
+    _comm->onReceive([](const uint8_t* d, size_t l) {
+        onCommReceived(d, l);
     });
 
-    // 初始化 LoRa（SX1262）
-    loraHandler.begin();
+    // 初始化 LoRa
+    loraHandler.begin(_cfg.deviceId);
+    loraHandler.setPacketCallback(onLoRaReceived);
 
-    // 收到 LoRa 封包 → BLE Notify 給手機
-    loraHandler.setRxCallback([](const uint8_t* data, size_t len) {
-        Serial.printf("[橋接] LoRa → BLE，%d bytes\n", len);
-        bleService.notify(data, len);
+    // Relay 初始化（廣播封包自動轉發）
+    relayHandler.init(_cfg.deviceId, [](const uint8_t* d, size_t l) {
+        return loraHandler.sendPacket(*(LoRaPacket*)nullptr); // TODO: 修正為正確呼叫
     });
 
-    Serial.println("=== 橋接就緒，等待連線 ===");
+    // 電源管理（RxDutyCycle 省電）
+    PowerMgr::init([](bool en) { loraHandler.setDutyCycle(en); });
+
+    // HMI 初始化
+    Display::init();
+    Button::init();
+    Button::onShortPress([]() { Display::nextPage(); });
+    Button::onLongPress([]() {
+        Serial.println("[Main] 長按 3 秒：切換模式（重開機生效）");
+        M5.Speaker.tone(1000, 200);
+    });
+    Button::onVeryLongPress([]() {
+        Serial.println("[Main] 長按 6 秒：重置 WiFi 設定");
+        configReset();
+        M5.Speaker.tone(500, 500);
+    });
+
+    Serial.println("=== 橋接就緒 ===");
 }
 
 void loop() {
-    // LoRa 中斷處理（必須在 loop 中輪詢）
-    loraHandler.loop();
+    // 各模組輪詢
+    if (_isCarryMode) usbSerialService.loop();
+    else              wifiService.loop();
 
-    // 短暫讓出 CPU（避免 watchdog 觸發）
+    loraHandler.loop();
+    PowerMgr::loop();
+    Display::loop();
+    Button::loop();
+    Led::loop();
+
     delay(1);
 }

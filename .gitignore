@@ -22,3 +22,4 @@ desktop.ini
 
 # Claude Code（本機設定不需同步）
 .claude/settings.local.json
+LoRaCommunication/

@@ -2,40 +2,52 @@
 @using LoRaPTT.ViewModels
 @inject MainViewModel VM
 
-<div class="container-fluid d-flex flex-column align-items-center justify-content-center vh-100">
+<div class="container-fluid d-flex flex-column align-items-center justify-content-center vh-100 bg-dark text-white">
 
     <!-- 狀態列 -->
     <div class="mb-4 text-center">
         <span class="badge @(VM.IsConnected ? "bg-success" : "bg-secondary") fs-6">
             @(VM.IsConnected ? "● 已連線" : "○ 未連線")
         </span>
-        <p class="mt-2 text-muted">@VM.StatusMessage</p>
+        @if (!string.IsNullOrEmpty(VM.ModeLabel))
+        {
+            <span class="badge bg-info ms-2">@VM.ModeLabel</span>
+        }
+        <p class="mt-2 text-muted small">@VM.StatusMessage</p>
     </div>
 
-    <!-- PTT 按鈕 -->
-    <button class="btn btn-ptt rounded-circle @(VM.IsPttActive ? "active" : "")"
+    <!-- PTT 大圓按鈕 -->
+    <button class="btn-ptt rounded-circle @(VM.IsPttActive ? "active" : "") @(!VM.IsConnected ? "disabled" : "")"
             @onmousedown="OnPttDown"
             @onmouseup="OnPttUp"
+            @ontouchstart:preventDefault="true"
             @ontouchstart="OnPttDown"
             @ontouchend="OnPttUp"
             disabled="@(!VM.IsConnected)">
         <span class="ptt-icon">🎙️</span>
-        <span class="ptt-label">@(VM.IsPttActive ? "傳送中" : "按住說話")</span>
+        <span class="ptt-label">@(VM.IsPttActive ? "傳送中..." : "按住說話")</span>
     </button>
 
-    <!-- 連線按鈕 -->
-    <button class="btn btn-outline-primary mt-5"
-            @onclick="VM.ConnectCommand.ExecuteAsync"
-            disabled="@VM.IsConnected">
-        @(VM.IsConnected ? "已連線" : "連接 LoRa 裝置")
-    </button>
+    <!-- 連線模式選擇 -->
+    <div class="mt-5 d-flex gap-3">
+        <button class="btn btn-outline-light btn-sm"
+                @onclick="VM.ConnectCommand.ExecuteAsync"
+                disabled="@VM.IsConnected">
+            @(VM.IsConnected ? "已連線" : "連接裝置")
+        </button>
+    </div>
+
+    <!-- 提示 -->
+    <p class="mt-3 text-muted small text-center">
+        攜帶模式：USB-C 連接<br/>基站模式：連接 LoRaPTT WiFi
+    </p>
 
 </div>
 
 <style>
     .btn-ptt {
-        width: 180px;
-        height: 180px;
+        width: 200px;
+        height: 200px;
         background: #dc3545;
         border: 4px solid #a71d2a;
         color: white;
@@ -44,21 +56,26 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        transition: transform 0.1s, background 0.1s;
+        transition: transform 0.1s, background 0.15s;
         user-select: none;
         -webkit-user-select: none;
+        cursor: pointer;
+        box-shadow: 0 6px 20px rgba(220,53,69,0.4);
     }
     .btn-ptt.active {
         background: #198754;
         border-color: #146c43;
         transform: scale(0.95);
+        box-shadow: 0 6px 20px rgba(25,135,84,0.4);
     }
-    .btn-ptt:disabled {
-        background: #6c757d;
-        border-color: #565e64;
+    .btn-ptt.disabled, .btn-ptt:disabled {
+        background: #495057;
+        border-color: #343a40;
+        box-shadow: none;
+        cursor: not-allowed;
     }
-    .ptt-icon { font-size: 2.5rem; }
-    .ptt-label { font-size: 0.85rem; margin-top: 4px; }
+    .ptt-icon  { font-size: 3rem; }
+    .ptt-label { font-size: 0.85rem; margin-top: 6px; letter-spacing: 0.05em; }
 </style>
 
 @code {

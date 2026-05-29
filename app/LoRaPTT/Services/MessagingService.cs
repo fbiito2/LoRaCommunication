@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using LoRaPTT.Models;
 using LoRaPTT.Services.Protocol;
 using Microsoft.Extensions.Logging;
@@ -8,13 +9,15 @@ using Contact = LoRaPTT.Models.Contact;
 namespace LoRaPTT.Services;
 
 /// <summary>
-/// 文字訊息服務實作。掛接 <see cref="ICommService.OnDataReceived"/>，
-/// 解析來自本機 C6L 的封包並依 TYPE 分流處理。
+/// 文字訊息服務實作。掛接 <see cref="ICommService"/>，以線路幀（<see cref="LinkFrame"/>）
+/// 與 C6L 溝通：DATA = LoRa 封包（含 RSSI），CTRL = JSON 控制（握手/設定）。
 ///
 /// SEQ 由本服務擁有（韌體不覆寫），用於 ACK 關聯與去重。
 /// </summary>
 public sealed class MessagingService : IMessagingService
 {
+    private const string AppVersion = "1.0";
+
     private readonly ICommService _comm;
     private readonly ILogger<MessagingService> _logger;
     private readonly DedupCache _dedup = new(128);
@@ -22,7 +25,10 @@ public sealed class MessagingService : IMessagingService
     private int _seq; // 以 Interlocked 遞增，取低 16 位作為封包 SEQ
 
     public string LocalNickname { get; set; } = "LoRaPTT";
+    public ushort? LocalDeviceId { get; private set; }
+    public string? FirmwareVersion { get; private set; }
 
+    public event Action? HandshakeCompleted;
     public event Action<ChatMessage>? MessageReceived;
     public event Action<ushort, ushort>? AckReceived;
     public event Action<Contact>? DeviceDiscovered;
@@ -32,9 +38,28 @@ public sealed class MessagingService : IMessagingService
         _comm = comm;
         _logger = logger;
         _comm.OnDataReceived += OnDataReceived;
+        _comm.OnConnectionChanged += OnConnectionChanged;
     }
 
     private ushort NextSeq() => (ushort)(Interlocked.Increment(ref _seq) & 0xFFFF);
+
+    // ── 連線後送握手（F-053）──────────────────────────────────
+    private void OnConnectionChanged(bool connected)
+    {
+        if (connected) _ = SendHelloAsync();
+    }
+
+    private async Task SendHelloAsync()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            cmd = "hello",
+            name = LocalNickname,
+            app_ver = AppVersion,
+        });
+        try { await _comm.SendAsync(LinkFrame.WrapCtrl(json)); }
+        catch (Exception ex) { _logger.LogError(ex, "送出握手 hello 失敗"); }
+    }
 
     // ── 送出 ────────────────────────────────────────────────
     public async Task<ChatMessage> SendTextAsync(ushort dstId, string text,
@@ -66,7 +91,7 @@ public sealed class MessagingService : IMessagingService
 
         try
         {
-            await _comm.SendAsync(PacketCodec.Serialize(pkt), ct);
+            await _comm.SendAsync(LinkFrame.WrapData(PacketCodec.Serialize(pkt)), ct);
         }
         catch (Exception ex)
         {
@@ -85,37 +110,83 @@ public sealed class MessagingService : IMessagingService
             Type = PacketType.Ping,
             Payload = Array.Empty<byte>(),
         };
-        await _comm.SendAsync(PacketCodec.Serialize(pkt), ct);
+        await _comm.SendAsync(LinkFrame.WrapData(PacketCodec.Serialize(pkt)), ct);
         _logger.LogInformation("已送出廣播 PING 探測");
     }
 
     // ── 收訊 ────────────────────────────────────────────────
-    private void OnDataReceived(byte[] data)
+    private void OnDataReceived(byte[] frame)
     {
-        if (!PacketCodec.TryDeserialize(data, out var pkt))
+        if (frame is null || frame.Length < 1) return;
+
+        switch (frame[0])
         {
-            _logger.LogWarning("收到無法解析的封包（{Len} bytes）", data?.Length ?? 0);
+            case LinkFrame.Data: HandleDataFrame(frame); break;
+            case LinkFrame.Ctrl: HandleCtrlFrame(frame); break;
+            default:
+                _logger.LogDebug("忽略未知線路幀類型 0x{T:X2}", frame[0]);
+                break;
+        }
+    }
+
+    private void HandleDataFrame(byte[] frame)
+    {
+        if (!LinkFrame.TryParseData(frame, out var packet, out short rssi))
+            return;
+        if (!PacketCodec.TryDeserialize(packet, out var pkt))
+        {
+            _logger.LogWarning("收到無法解析的 LoRa 封包");
             return;
         }
 
         // 去重：洪泛網路同封包可能多路抵達
-        if (_dedup.SeenOrAdd(pkt.SrcId, pkt.Seq))
-            return;
+        if (_dedup.SeenOrAdd(pkt.SrcId, pkt.Seq)) return;
 
         switch (pkt.Type)
         {
-            case PacketType.Text: HandleText(pkt); break;
+            case PacketType.Text: HandleText(pkt, rssi); break;
             case PacketType.Ack: HandleAck(pkt); break;
             case PacketType.Ping: HandlePing(pkt); break;
             case PacketType.Voice:   // 語音另由 PTT 路徑處理
-            case PacketType.Control: // 控制/心跳暫不處理
+            case PacketType.Control:
             default:
                 _logger.LogDebug("忽略 TYPE=0x{Type:X2} 封包", (byte)pkt.Type);
                 break;
         }
     }
 
-    private void HandleText(LoRaPacket pkt)
+    private void HandleCtrlFrame(byte[] frame)
+    {
+        if (!LinkFrame.TryParseCtrl(frame, out var json)) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("status", out var statusEl)) return;
+            var status = statusEl.GetString();
+
+            if (status == "hello")
+            {
+                if (root.TryGetProperty("device_id", out var idEl) && idEl.TryGetUInt16(out var id))
+                    LocalDeviceId = id;
+                if (root.TryGetProperty("fw_ver", out var fwEl))
+                    FirmwareVersion = fwEl.GetString();
+                _logger.LogInformation("握手完成：本機 C6L ID=0x{Id:X4}，韌體 {Fw}",
+                    LocalDeviceId ?? 0, FirmwareVersion);
+                HandshakeCompleted?.Invoke();
+            }
+            else if (status == "ok")
+            {
+                _logger.LogInformation("C6L 設定已套用");
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "無法解析 C6L 控制 JSON：{Json}", json);
+        }
+    }
+
+    private void HandleText(LoRaPacket pkt, short rssi)
     {
         var msg = new ChatMessage
         {
@@ -124,6 +195,7 @@ public sealed class MessagingService : IMessagingService
             DstId = pkt.DstId,
             Text = pkt.PayloadAsText(),
             Status = MessageStatus.Received,
+            Rssi = rssi,
         };
         MessageReceived?.Invoke(msg);
 
@@ -142,7 +214,7 @@ public sealed class MessagingService : IMessagingService
             Type = PacketType.Ack,
             Payload = payload,
         };
-        try { await _comm.SendAsync(PacketCodec.Serialize(pkt)); }
+        try { await _comm.SendAsync(LinkFrame.WrapData(PacketCodec.Serialize(pkt))); }
         catch (Exception ex) { _logger.LogError(ex, "回送 ACK 失敗 DST=0x{Dst:X4}", dst); }
     }
 
@@ -166,7 +238,7 @@ public sealed class MessagingService : IMessagingService
         }
         else
         {
-            // 這是針對我們 PING 的回覆 → payload 為對方暱稱，發現裝置
+            // 針對我們 PING 的回覆 → payload 為對方暱稱，發現裝置
             var contact = new Contact
             {
                 DeviceId = pkt.SrcId,
@@ -187,7 +259,7 @@ public sealed class MessagingService : IMessagingService
             Type = PacketType.Ping,
             Payload = Encoding.UTF8.GetBytes(LocalNickname),
         };
-        try { await _comm.SendAsync(PacketCodec.Serialize(pkt)); }
+        try { await _comm.SendAsync(LinkFrame.WrapData(PacketCodec.Serialize(pkt))); }
         catch (Exception ex) { _logger.LogError(ex, "回覆 PING 失敗 DST=0x{Dst:X4}", dst); }
     }
 }

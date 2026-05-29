@@ -45,6 +45,7 @@ public partial class ChatViewModel : ObservableObject
         _messaging.MessageReceived += OnMessageReceived;
         _messaging.AckReceived += OnAckReceived;
         _messaging.DeviceDiscovered += OnDeviceDiscovered;
+        _messaging.HandshakeCompleted += OnHandshakeCompleted;
 
         Nickname = _messaging.LocalNickname;
     }
@@ -117,7 +118,15 @@ public partial class ChatViewModel : ObservableObject
     private void OnConnectionChanged(bool connected) => RunOnUi(() =>
     {
         IsConnected = connected;
-        StatusMessage = connected ? "已連線" : "已斷線";
+        StatusMessage = connected ? "已連線，握手中..." : "已斷線";
+    });
+
+    private void OnHandshakeCompleted() => RunOnUi(() =>
+    {
+        var id = _messaging.LocalDeviceId;
+        StatusMessage = id.HasValue
+            ? $"已連線（本機 0x{id.Value:X4}，韌體 {_messaging.FirmwareVersion}）"
+            : "已連線";
     });
 
     private void OnMessageReceived(ChatMessage msg) => RunOnUi(() =>

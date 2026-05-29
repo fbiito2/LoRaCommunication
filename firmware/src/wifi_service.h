@@ -17,12 +17,17 @@ public:
     void setSsid(const char* ssid);
     void setPassword(const char* pass);
 
+    /// @brief 開/關 WiFi AP（F-041 省電切換）；關閉時停止熱點與 UDP
+    void setApEnabled(bool enable);
+    bool isApEnabled() const { return _apEnabled; }
+
 private:
     std::function<void(const uint8_t*, size_t)> _rxCallback;
     WiFiUDP _udp;
     IPAddress _clientIp;     // 最後一次傳入封包的來源 IP（回傳用）
     uint16_t  _clientPort = 0;
     bool      _clientKnown = false;
+    bool      _apEnabled   = false;
 
     char _ssid[32] = "LoRaPTT";
     char _pass[32] = "loraptt2026";

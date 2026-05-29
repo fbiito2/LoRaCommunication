@@ -118,8 +118,9 @@ void LoRaHandler::loop() {
         return;
     }
 
-    Serial.printf("[LoRa] 收到封包 SRC=0x%04X DST=0x%04X SEQ=%d RSSI=%.1f\n",
-                  pkt.srcId, pkt.dstId, pkt.seq, _radio.getRSSI());
+    int16_t rssi = (int16_t)lroundf(_radio.getRSSI());
+    Serial.printf("[LoRa] 收到封包 SRC=0x%04X DST=0x%04X SEQ=%d RSSI=%d\n",
+                  pkt.srcId, pkt.dstId, pkt.seq, rssi);
 
     // 交給 Relay 模組判斷：是否轉發，是否給自己
     bool forMe = relayHandler.process(pkt);
@@ -127,7 +128,7 @@ void LoRaHandler::loop() {
     if (forMe && _callback) {
         // 解密 payload 後交給上層（Phase 1 為直通不變更）
         payloadDecrypt(pkt.payload, pkt.payloadLen, pkt.srcId, pkt.seq);
-        _callback(pkt);
+        _callback(pkt, rssi);
     }
 
     if (_dutyCycleEnabled)

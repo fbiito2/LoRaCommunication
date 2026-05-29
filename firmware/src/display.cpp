@@ -6,6 +6,7 @@ bool    isCarryMode = true;
 int     peerCount   = 0;
 float   loraFreq    = 920.0f;
 uint8_t loraSf      = 7;
+int16_t lastRssi    = 0;
 String  wifiSsid    = "LoRaPTT";
 String  wifiIp      = "192.168.4.1";
 
@@ -55,7 +56,7 @@ void loop() {
         M5.Display.println("LoRa");
         M5.Display.printf("%.0fMHz\n", loraFreq);
         M5.Display.printf("SF:%d\n", loraSf);
-        M5.Display.printf("+22dBm\n");
+        M5.Display.printf("RSSI:%d\n", lastRssi);
         break;
 
     default: break;

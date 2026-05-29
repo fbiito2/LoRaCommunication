@@ -10,8 +10,17 @@ namespace LoRaPTT.Services;
 /// </summary>
 public interface IMessagingService
 {
-    /// <summary>本機暱稱（回覆 PING 探測時帶出）</summary>
+    /// <summary>本機暱稱（握手與回覆 PING 探測時帶出）</summary>
     string LocalNickname { get; set; }
+
+    /// <summary>本機所連 C6L 的 Device ID（握手回應取得，未握手為 null）</summary>
+    ushort? LocalDeviceId { get; }
+
+    /// <summary>本機所連 C6L 的韌體版本（握手回應取得）</summary>
+    string? FirmwareVersion { get; }
+
+    /// <summary>握手完成（收到 C6L hello-ack）</summary>
+    event Action HandshakeCompleted;
 
     /// <summary>收到文字訊息（點對點/廣播/群組皆會觸發）</summary>
     event Action<ChatMessage> MessageReceived;

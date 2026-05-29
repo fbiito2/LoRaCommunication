@@ -14,6 +14,7 @@ namespace Display {
     extern int     peerCount;
     extern float   loraFreq;
     extern uint8_t loraSf;
+    extern int16_t lastRssi;   // 最近收到封包的 RSSI（dBm）
     extern String  wifiSsid;
     extern String  wifiIp;
 }

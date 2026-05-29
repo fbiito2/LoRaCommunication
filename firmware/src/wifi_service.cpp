@@ -6,17 +6,29 @@ void WiFiService::setSsid(const char* ssid) { strncpy(_ssid, ssid, 31); }
 void WiFiService::setPassword(const char* pass) { strncpy(_pass, pass, 31); }
 
 void WiFiService::begin() {
-    // 開啟 WiFi AP 熱點模式
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(_ssid, _pass);
+    setApEnabled(true);
+}
 
-    IPAddress ip = WiFi.softAPIP();
-    Serial.printf("[WiFi] AP 已啟動，SSID: %s，IP: %s\n",
-                  _ssid, ip.toString().c_str());
+void WiFiService::setApEnabled(bool enable) {
+    if (enable == _apEnabled) return;
 
-    // 啟動 UDP Server
-    _udp.begin(WIFI_UDP_PORT);
-    Serial.printf("[WiFi] UDP Server 監聽 port %d\n", WIFI_UDP_PORT);
+    if (enable) {
+        // 開啟 WiFi AP 熱點模式
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(_ssid, _pass);
+        IPAddress ip = WiFi.softAPIP();
+        Serial.printf("[WiFi] AP 已啟動，SSID: %s，IP: %s\n",
+                      _ssid, ip.toString().c_str());
+        _udp.begin(WIFI_UDP_PORT);
+        Serial.printf("[WiFi] UDP Server 監聽 port %d\n", WIFI_UDP_PORT);
+    } else {
+        _udp.stop();
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_OFF);
+        _clientKnown = false;
+        Serial.println("[WiFi] AP 已關閉（省電）");
+    }
+    _apEnabled = enable;
 }
 
 bool WiFiService::isConnected() {

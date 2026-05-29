@@ -26,7 +26,8 @@
 #define LORA_PREAMBLE_SHORT  8
 
 /// 收到完整解密封包後的回呼（payload 已解密，可直接使用）
-using LoRaPacketCallback = std::function<void(const LoRaPacket& pkt)>;
+/// @param rssi 該封包接收信號強度（dBm，整數）
+using LoRaPacketCallback = std::function<void(const LoRaPacket& pkt, int16_t rssi)>;
 
 class LoRaHandler {
 public:

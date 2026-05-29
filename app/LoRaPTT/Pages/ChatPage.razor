@@ -62,6 +62,10 @@
                             {
                                 <span class="badge bg-dark ms-1">@(Services.Protocol.DstId.IsBroadcast(m.DstId) ? "廣播" : "群組")</span>
                             }
+                            @if (m.Rssi.HasValue)
+                            {
+                                <span class="text-white-50 ms-1">@(m.Rssi)dBm</span>
+                            }
                         </div>
                     }
                     <div>@m.Text</div>

@@ -13,9 +13,14 @@ import asyncio
 import struct
 import time
 import sys
+import json
 import zlib
 
 HOP_OFFSET = 4  # MAC 計算時跳過的 HOP 位移（與韌體一致）
+
+# ── 線路幀（與韌體 main.cpp / mock server 一致）──────────────
+LINK_DATA = 0x01
+LINK_CTRL = 0x02
 
 
 def build_packet(src_id: int, dst_id: int, hop: int, seq: int,
@@ -25,6 +30,17 @@ def build_packet(src_id: int, dst_id: int, hop: int, seq: int,
     data = header[:HOP_OFFSET] + header[HOP_OFFSET + 1:] + payload
     mac = struct.pack(">I", zlib.crc32(data) & 0xFFFFFFFF)
     return header + payload + mac
+
+
+def wrap_data(packet: bytes) -> bytes:
+    """phone→C6L DATA 幀：[01][packet]"""
+    return bytes([LINK_DATA]) + packet
+
+
+def wrap_hello(name: str = "TestClient") -> bytes:
+    """CTRL hello 握手幀"""
+    return bytes([LINK_CTRL]) + json.dumps(
+        {"cmd": "hello", "name": name, "app_ver": "test"}).encode("utf-8")
 
 
 def parse_packet(data: bytes) -> dict:
@@ -55,10 +71,22 @@ class TestClient(asyncio.DatagramProtocol):
 
     def datagram_received(self, data, addr):
         self.last_data = data
-        pkt = parse_packet(data)
-        print(f"  ← 收到回覆: SRC=0x{pkt['src_id']:04X} "
+        if len(data) < 1:
+            return
+        link = data[0]
+        if link == LINK_CTRL:
+            print(f"  ← CTRL: {data[1:].decode('utf-8', 'replace')}")
+            self.received.set()
+            return
+        if link != LINK_DATA:
+            print(f"  ← 未知線路幀 0x{link:02X}")
+            return
+        # C6L→phone DATA：[01][RSSI int16 BE][packet]
+        rssi = struct.unpack(">h", data[1:3])[0]
+        pkt = parse_packet(data[3:])
+        print(f"  ← DATA 回覆: SRC=0x{pkt['src_id']:04X} "
               f"DST=0x{pkt['dst_id']:04X} SEQ={pkt['seq']} "
-              f"payload={len(pkt['payload'])}B")
+              f"payload={len(pkt['payload'])}B RSSI={rssi}dBm")
         self.received.set()
 
 
@@ -73,6 +101,11 @@ async def run_text_test(host: str, port: int):
     print(f"目標: {host}:{port}")
     print()
 
+    # 先握手（F-053）
+    transport.sendto(wrap_hello())
+    print("  → 送出握手 hello")
+    await asyncio.sleep(0.3)
+
     messages = ["Hello LoRa!", "測試中文", "PTT 對講機"]
 
     for i, msg in enumerate(messages):
@@ -86,7 +119,7 @@ async def run_text_test(host: str, port: int):
             payload=payload
         )
         protocol.received.clear()
-        transport.sendto(pkt)
+        transport.sendto(wrap_data(pkt))
         print(f"  → 發送文字: \"{msg}\" (SEQ={i+1}, {len(payload)}B)")
 
         try:
@@ -125,7 +158,7 @@ async def run_voice_test(host: str, port: int):
             payload=fake_voice
         )
         protocol.received.clear()
-        transport.sendto(pkt)
+        transport.sendto(wrap_data(pkt))
         print(f"  → 語音包 #{i+1}/10 (SEQ={100+i}, 60B payload)")
 
         try:

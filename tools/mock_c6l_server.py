@@ -25,6 +25,7 @@ import asyncio
 import struct
 import time
 import sys
+import json
 import zlib
 from typing import Optional
 
@@ -35,6 +36,32 @@ HOP_OFFSET = 4        # HOP 欄位位移（MAC 計算時跳過，與韌體一致
 DST_BROADCAST = 0xFFFF
 DST_GROUP_MIN = 0xFFE0
 DST_GROUP_MAX = 0xFFEF
+
+# ── 線路幀類型（手機 ↔ C6L，與韌體 main.cpp 一致）────────────
+LINK_DATA = 0x01      # [01][LoRa封包]（phone→C6L）；[01][RSSI int16 BE][LoRa封包]（C6L→phone）
+LINK_CTRL = 0x02      # [02][JSON]
+MOCK_DEVICE_ID = 0xB001
+MOCK_FW_VER = "mock-1.0"
+MOCK_RSSI = -75       # 模擬回傳的 RSSI（dBm）
+
+
+def wrap_data(packet: bytes, rssi: int = MOCK_RSSI) -> bytes:
+    """C6L→phone DATA 幀：[01][RSSI int16 BE][packet]"""
+    return bytes([LINK_DATA]) + struct.pack(">h", rssi) + packet
+
+
+def wrap_ctrl(obj: dict) -> bytes:
+    """CTRL 幀：[02][JSON]"""
+    return bytes([LINK_CTRL]) + json.dumps(obj).encode("utf-8")
+
+
+def make_hello_ack() -> bytes:
+    return wrap_ctrl({
+        "status": "hello",
+        "device_id": MOCK_DEVICE_ID,
+        "name": "MockC6L",
+        "fw_ver": MOCK_FW_VER,
+    })
 
 PKT_TYPE_TEXT = 0x01
 PKT_TYPE_VOICE = 0x02
@@ -117,54 +144,74 @@ class EchoProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr):
         self.pkt_count += 1
-        pkt = parse_packet(data)
+        if len(data) < 1:
+            return
+        link = data[0]
 
+        # CTRL 幀：握手 / 設定
+        if link == LINK_CTRL:
+            self._handle_ctrl(data[1:], addr)
+            return
+
+        # DATA 幀：phone→C6L = [01][packet]（無 RSSI）
+        if link != LINK_DATA:
+            log(f"← 收到未知線路幀類型 0x{link:02X}（{len(data)}B）")
+            return
+
+        pkt = parse_packet(data[1:])
         if pkt:
-            log(f"← 收到 [{pkt['type_name']}] 從 0x{pkt['src_id']:04X} "
+            log(f"← DATA [{pkt['type_name']}] 從 0x{pkt['src_id']:04X} "
                 f"→ 0x{pkt['dst_id']:04X}, SEQ={pkt['seq']}, "
-                f"payload={len(pkt['payload'])}B "
-                f"(來自 {addr[0]}:{addr[1]})")
+                f"payload={len(pkt['payload'])}B")
         else:
-            log(f"← 收到未知格式封包 {len(data)}B 從 {addr[0]}:{addr[1]}")
+            log(f"← DATA 但封包格式錯誤（{len(data)-1}B）")
+            return
 
         # 模擬延遲後回傳
         if self.delay_ms > 0:
             asyncio.get_event_loop().call_later(
-                self.delay_ms / 1000.0,
-                self._send_reply, data, addr
-            )
+                self.delay_ms / 1000.0, self._send_reply, pkt, addr)
         else:
-            self._send_reply(data, addr)
+            self._send_reply(pkt, addr)
 
-    def _send_reply(self, data: bytes, addr):
-        """回傳封包（模擬對端回覆）"""
-        pkt = parse_packet(data)
-        if pkt:
-            # 交換 SRC/DST，模擬對端回覆
-            reply = build_packet(
-                src_id=0xB001,  # 模擬對端 ID
-                dst_id=pkt["src_id"],
-                hop=3,
-                seq=pkt["seq"],
-                pkt_type=pkt["type"],
-                payload=pkt["payload"]
-            )
-            self.transport.sendto(reply, addr)
-            log(f"→ 回傳 [{pkt['type_name']}] SEQ={pkt['seq']} "
-                f"到 {addr[0]}:{addr[1]} "
-                f"(延遲 {self.delay_ms}ms)")
+    def _handle_ctrl(self, body: bytes, addr):
+        try:
+            obj = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            log(f"← CTRL 但 JSON 解析失敗：{body!r}")
+            return
+        cmd = obj.get("cmd")
+        if cmd == "hello":
+            log(f"← CTRL hello（APP: {obj.get('name')} v{obj.get('app_ver')}）→ 回 hello-ack")
+            self.transport.sendto(make_hello_ack(), addr)
+        elif cmd == "set_config":
+            log(f"← CTRL set_config {obj} → 回 ok")
+            self.transport.sendto(wrap_ctrl({"status": "ok"}), addr)
         else:
-            # 原樣回傳
-            self.transport.sendto(data, addr)
-            log(f"→ 原樣回傳 {len(data)}B")
+            log(f"← CTRL 未知 cmd：{cmd}")
+
+    def _send_reply(self, pkt: dict, addr):
+        """回傳封包（模擬對端回覆，交換 SRC/DST）"""
+        reply = build_packet(
+            src_id=MOCK_DEVICE_ID,    # 模擬對端 ID
+            dst_id=pkt["src_id"],
+            hop=3,
+            seq=pkt["seq"],
+            pkt_type=pkt["type"],
+            payload=pkt["payload"],
+        )
+        self.transport.sendto(wrap_data(reply), addr)
+        log(f"→ DATA [{pkt['type_name']}] SEQ={pkt['seq']} 回 {addr[0]}:{addr[1]} "
+            f"(RSSI={MOCK_RSSI}, 延遲 {self.delay_ms}ms)")
 
 
 # ── Dual 模式（模擬兩台 C6L）─────────────────────────────
 class DualProtocol(asyncio.DatagramProtocol):
     """兩個 port 互傳：A 的資料轉給 B，B 的轉給 A"""
 
-    def __init__(self, name: str, delay_ms: int = 0):
+    def __init__(self, name: str, node_id: int, delay_ms: int = 0):
         self.name = name
+        self.node_id = node_id
         self.delay_ms = delay_ms
         self.transport = None
         self.peer: Optional['DualProtocol'] = None
@@ -175,31 +222,51 @@ class DualProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr):
         self.client_addr = addr
-        pkt = parse_packet(data)
+        if len(data) < 1:
+            return
+        link = data[0]
 
-        if pkt:
-            log(f"[{self.name}] ← 收到 [{pkt['type_name']}] "
-                f"SEQ={pkt['seq']}, {len(pkt['payload'])}B 從 {addr}")
-        else:
-            log(f"[{self.name}] ← 收到 {len(data)}B 從 {addr}")
+        # CTRL 握手 / 設定（由本節點回覆）
+        if link == LINK_CTRL:
+            try:
+                obj = json.loads(data[1:].decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return
+            if obj.get("cmd") == "hello":
+                ack = wrap_ctrl({"status": "hello", "device_id": self.node_id,
+                                 "name": self.name, "fw_ver": MOCK_FW_VER})
+                self.transport.sendto(ack, addr)
+                log(f"[{self.name}] ← hello → 回 ack (id=0x{self.node_id:04X})")
+            elif obj.get("cmd") == "set_config":
+                self.transport.sendto(wrap_ctrl({"status": "ok"}), addr)
+            return
 
-        # 轉發給對端
+        if link != LINK_DATA:
+            return
+
+        pkt = parse_packet(data[1:])
+        if not pkt:
+            log(f"[{self.name}] ← DATA 封包格式錯誤")
+            return
+        log(f"[{self.name}] ← DATA [{pkt['type_name']}] SEQ={pkt['seq']} "
+            f"→ 0x{pkt['dst_id']:04X}")
+
+        # 本節點「發射」：SRC 改為本節點 ID（模擬韌體 stamp），再轉給對端手機
         if self.peer and self.peer.client_addr:
+            relayed = build_packet(self.node_id, pkt["dst_id"], 3,
+                                   pkt["seq"], pkt["type"], pkt["payload"])
             if self.delay_ms > 0:
                 asyncio.get_event_loop().call_later(
-                    self.delay_ms / 1000.0,
-                    self._forward, data
-                )
+                    self.delay_ms / 1000.0, self._forward, relayed)
             else:
-                self._forward(data)
+                self._forward(relayed)
         else:
-            log(f"[{self.name}] ⚠ 對端尚未連線，無法轉發")
+            log(f"[{self.name}] ⚠ 對端手機尚未連線，無法轉發")
 
-    def _forward(self, data: bytes):
+    def _forward(self, packet: bytes):
         if self.peer and self.peer.client_addr:
-            self.peer.transport.sendto(data, self.peer.client_addr)
-            log(f"[{self.name}] → 轉發 {len(data)}B 到 "
-                f"{self.peer.name} ({self.peer.client_addr})")
+            self.peer.transport.sendto(wrap_data(packet), self.peer.client_addr)
+            log(f"[{self.name}] → 轉發到 {self.peer.name} ({self.peer.client_addr})")
 
 
 # ── 主程式 ────────────────────────────────────────────────
@@ -230,8 +297,8 @@ async def run_dual(port_a: int, port_b: int, delay_ms: int):
     """Dual 模式：兩個 port 互傳"""
     loop = asyncio.get_event_loop()
 
-    proto_a = DualProtocol("NodeA", delay_ms)
-    proto_b = DualProtocol("NodeB", delay_ms)
+    proto_a = DualProtocol("NodeA", 0xA001, delay_ms)
+    proto_b = DualProtocol("NodeB", 0xB001, delay_ms)
     proto_a.peer = proto_b
     proto_b.peer = proto_a
 

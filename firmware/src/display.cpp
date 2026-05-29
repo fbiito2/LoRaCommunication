@@ -2,13 +2,17 @@
 
 namespace Display {
 
-bool    isCarryMode = true;
-int     peerCount   = 0;
-float   loraFreq    = 920.0f;
-uint8_t loraSf      = 7;
-int16_t lastRssi    = 0;
-String  wifiSsid    = "LoRaPTT";
-String  wifiIp      = "192.168.4.1";
+uint16_t deviceId   = 0;
+String   deviceName = "LoRaPTT";
+String   appStatus  = "none";
+float    loraFreq   = 920.0f;
+uint8_t  loraSf     = 7;
+int16_t  lastRssi   = 0;
+String   wifiSsid   = "LoRaPTT";
+String   wifiIp     = "192.168.4.1";
+uint32_t rxCount    = 0;
+uint32_t txCount    = 0;
+uint32_t relayCount = 0;
 
 static Page      _page    = Page::STATUS;
 static uint32_t  _lastMs  = 0;
@@ -38,25 +42,28 @@ void loop() {
 
     switch (_page) {
     case Page::STATUS:
-        M5.Display.println("LoRaPTT");
-        M5.Display.printf("Mode:%s\n", isCarryMode ? "USB" : "WiFi");
-        M5.Display.printf("Peer:%d\n", peerCount);
+        M5.Display.printf("ID:%04X\n", deviceId);
+        M5.Display.printf("%.8s\n", deviceName.c_str());
+        M5.Display.printf("APP:%s\n", appStatus.c_str());
         break;
 
     case Page::NETWORK:
         M5.Display.println("Network");
-        M5.Display.printf("WiFi:%s\n", isCarryMode ? "OFF" : "ON");
-        if (!isCarryMode) {
-            M5.Display.printf("%.8s\n", wifiSsid.c_str());
-            M5.Display.printf("%.13s\n", wifiIp.c_str());
-        }
+        M5.Display.printf("%.10s\n", wifiSsid.c_str());
+        M5.Display.printf("%.13s\n", wifiIp.c_str());
         break;
 
     case Page::LORA:
         M5.Display.println("LoRa");
-        M5.Display.printf("%.0fMHz\n", loraFreq);
-        M5.Display.printf("SF:%d\n", loraSf);
+        M5.Display.printf("%.0fMHz SF%d\n", loraFreq, loraSf);
         M5.Display.printf("RSSI:%d\n", lastRssi);
+        break;
+
+    case Page::RELAY:
+        M5.Display.println("Relay");
+        M5.Display.printf("Fwd:%lu\n", (unsigned long)relayCount);
+        M5.Display.printf("Rx:%lu Tx:%lu\n",
+                          (unsigned long)rxCount, (unsigned long)txCount);
         break;
 
     default: break;

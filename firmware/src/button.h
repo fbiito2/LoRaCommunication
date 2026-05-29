@@ -9,6 +9,6 @@ namespace Button {
     void loop(); // 在 main loop() 呼叫
 
     void onShortPress(VoidCb cb);    // 短按：切換 OLED 頁面
-    void onLongPress(VoidCb cb);     // 長按 3 秒：切換攜帶/基站模式
-    void onVeryLongPress(VoidCb cb); // 長按 6 秒：重置 WiFi 設定
+    void onLongPress(VoidCb cb);     // 長按 3 秒：開/關 WiFi AP
+    void onVeryLongPress(VoidCb cb); // 長按 6 秒：重置設定
 }

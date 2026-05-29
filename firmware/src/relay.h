@@ -16,11 +16,15 @@ public:
     /// @return true = 這個封包應交給手機 APP（自己/廣播/群組，群組成員資格由 APP 判斷）
     bool process(LoRaPacket& pkt);
 
+    /// @brief 累計已轉發的封包數（OLED 中繼統計用）
+    uint32_t forwardCount() const { return _forwardCount; }
+
 private:
     bool _isDuplicate(uint16_t srcId, uint16_t seq);
     void _markSeen(uint16_t srcId, uint16_t seq);
 
     uint16_t    _myId   = 0;
+    uint32_t    _forwardCount = 0;
     LoRaSendFunc _sendFn;
 
     // 去重快取（ring buffer）

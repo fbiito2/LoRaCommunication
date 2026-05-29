@@ -36,6 +36,7 @@ bool RelayHandler::process(LoRaPacket& pkt) {
         size_t len = packetSerialize(pkt, buf, sizeof(buf));
         if (len > 0) {
             _sendFn(buf, len);
+            _forwardCount++;
             Serial.printf("[Relay] 轉發封包 SRC=0x%04X DST=0x%04X HOP=%d\n",
                           pkt.srcId, pkt.dstId, pkt.hop);
         }

@@ -59,6 +59,7 @@ static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
     PowerMgr::onActivity();
     Led::setLoRaRx();
     Display::lastRssi = rssi;
+    Display::rxCount++;
 
     // F-043：收到文字訊息短響一聲（語音幀過於頻繁，不蜂鳴）
     if (pkt.type == PKT_TYPE_TEXT) M5.Speaker.tone(2000, 80);
@@ -133,6 +134,7 @@ static void onLinkReceived(int idx, const uint8_t* data, size_t len) {
         }
         Led::setLoRaTx();
         loraHandler.sendPacket(pkt);
+        Display::txCount++;
         Led::setCarryMode();
     } else if (type == LINK_CTRL) {
         handleCtrl(idx, (const char*)(data + 1), len - 1);
@@ -173,9 +175,11 @@ void setup() {
     usbSerialService.onReceive([](const uint8_t* d, size_t l) { onLinkReceived(0, d, l); });
     wifiService.onReceive(   [](const uint8_t* d, size_t l) { onLinkReceived(1, d, l); });
 
-    // Display 網路資訊
-    Display::wifiSsid = WiFi.softAPSSID();
-    Display::wifiIp   = WiFi.softAPIP().toString();
+    // Display 裝置與網路資訊
+    Display::deviceId   = _cfg.deviceId;
+    Display::deviceName = _cfg.deviceName;
+    Display::wifiSsid   = WiFi.softAPSSID();
+    Display::wifiIp     = WiFi.softAPIP().toString();
 
     // LoRa
     loraHandler.begin(_cfg.deviceId);
@@ -215,6 +219,11 @@ void setup() {
 void loop() {
     usbSerialService.loop();
     wifiService.loop();
+
+    // 更新 OLED 統計與 APP 連線狀態
+    bool u = _transports[0].hasApp, w = _transports[1].hasApp;
+    Display::appStatus  = (u && w) ? "USB+WiFi" : u ? "USB" : w ? "WiFi" : "none";
+    Display::relayCount = relayHandler.forwardCount();
 
     loraHandler.loop();
     PowerMgr::loop();

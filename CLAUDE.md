@@ -41,14 +41,16 @@
 
 ## 使用模式
 
-C6L 支援兩種使用模式，硬體完全相同，差別只在供電來源和通訊方式：
+**沒有需要切換的「使用模式」。** 所有節點硬體與韌體相同、中繼能力恆開；行為僅由「目前有哪些傳輸層連著 APP」決定。供電來源與「是否有 APP」彼此獨立。
 
-### 攜帶模式（USB-C 接手機）
+C6L 提供兩種傳輸層連接手機，**可同時運作**（詳見「雙傳輸層通訊」）：
+
+### USB Serial（Type-C 直連）
 
 ```
 ┌──────────┐
 │   手機    │
-│ 供電+通訊 │
+│ 供電(+通訊)│
 │   USB-C   │
 │     │     │
 │  ┌──────┐ │
@@ -58,23 +60,30 @@ C6L 支援兩種使用模式，硬體完全相同，差別只在供電來源和�
 隨身帶著走
 ```
 
-- USB-C 接手機，手機供電 + USB Serial（CDC）通訊
+- USB-C 接手機，手機供電；**若該手機有 APP 並完成握手**則同時走 USB Serial（CDC）通訊
 - 低延遲、穩定、不佔 WiFi
-- 適合移動中使用
+- 注意：USB 接上不等於有 APP——也可能只是借電（見下方電量共享場景）
 
-### 基站模式（USB-C 接行動電源）
+### WiFi AP（手機無線連入）
 
 ```
-行動電源 ──USB-C──→ C6L ──WiFi──→ 手機（可在數十公尺外）
-                     │
-                   LoRa 收發
-                   可架高處增強收訊
+行動電源/手機 ──USB-C供電──→ C6L ──WiFi AP──→ 手機（可在數十公尺外）
+                              │
+                            LoRa 收發
+                            可架高處增強收訊
 ```
 
-- USB-C 接行動電源，行動電源供電
-- C6L 開 WiFi AP 熱點，手機連上後以 UDP 通訊
+- C6L 開 WiFi AP 熱點（預設常開），手機連上後以 UDP 通訊
 - 手機可離開數十公尺，C6L 可架高處增強 LoRa 收訊
 - 適合定點/營地/車上
+
+### 電量共享場景（兩傳輸層同時用）
+
+A 手機有 APP 但電量低、B 手機有電但沒 APP：C6L 用 Type-C 接 B 手機純供電，**同時**開 WiFi AP 讓 A 手機連入傳訊。兩傳輸層缺一不可，證明「USB／WiFi 二選一」是錯的。
+
+### 純中繼
+
+C6L 只被供電、**沒有任何 APP 連線（USB 無握手、WiFi 無 client）** → 自動成為純中繼站，架在任何位置都只做洪泛轉發。
 
 ## 系統架構
 
@@ -104,7 +113,7 @@ C6L 支援兩種使用模式，硬體完全相同，差別只在供電來源和�
 ```
 
 - C6L 作為 USB Serial/WiFi ↔ LoRa 透傳橋接器（bridge）
-- 手機與 C6L 的連線方式：攜帶模式用 USB Serial（CDC）、基站模式用 WiFi UDP
+- 手機與 C6L 的連線方式：USB Serial（CDC）與 WiFi UDP，兩者可同時運作
 - 所有音訊處理（錄音、編碼、解碼、播放）在手機端完成
 - 不需要外接麥克風或喇叭模組
 - 每個節點可同時當中繼，也可部署中繼專用節點
@@ -137,27 +146,30 @@ C6L 支援兩種使用模式，硬體完全相同，差別只在供電來源和�
 | WiFi UDP 單包上限 | ~65507 bytes ✅ |
 | LoRa 單包上限 | ~255 bytes ✅ |
 
-### 雙模通訊：USB Serial / WiFi
+### 雙傳輸層通訊：USB Serial + WiFi（可同時）
 
-手機與 C6L 之間的通訊根據使用模式自動切換：
+手機與 C6L 之間的兩種傳輸層**可同時運作**，不是二選一、也沒有模式切換。LoRa 收到的封包推送給**所有已握手的傳輸層**，任一傳輸層送來的資料都會發 LoRa。
 
-**韌體自動偵測邏輯：**
+**韌體連線判定邏輯：**
 
 ```
 開機
-  → 偵測 USB 資料線是否連接手機（USB CDC DTR 訊號）
-      → 有 DTR → 攜帶模式：啟用 USB Serial（CDC）
-      → 無 DTR → 基站模式：啟用 WiFi AP + UDP
+  → WiFi AP 預設啟動（可由按鈕長按 3 秒關閉省電）
+  → USB CDC：偵測到 USB host（DTR）→ 開啟 CDC，但「僅供電」與「有 APP」要再區分
+  → 任一傳輸層收到 APP 的握手封包（F-053）→ 標記該傳輸層「有 APP」、開始雙向橋接
+  → 沒有任何傳輸層握手 → 純中繼站（只做 LoRa 洪泛轉發）
 ```
 
-**攜帶模式 — USB Serial（CDC）：**
+> **關鍵：USB host 接上 ≠ 有 APP。** 純供電的手機（如借電的 B 手機）有 DTR 但不會送握手，C6L 不把它當資料端。必須靠 F-053 握手區分。
+
+**USB Serial（CDC）：**
 - 透過 USB-C 直接以 Serial 通訊，同時由手機供電
 - 延遲極低、最穩定、不佔無線頻寬
 - Android 手機需 USB OTG 支援（絕大多數都有）
 - APP 端使用 USB Serial library 讀寫
 
-**基站模式 — WiFi AP + UDP：**
-- C6L 開 WiFi 熱點（SSID 如 `LoRaPTT_A`，密碼可透過 APP 設定）
+**WiFi AP + UDP：**
+- C6L 開 WiFi 熱點（SSID 如 `LoRaPTT_A01B`，密碼可透過 APP 設定），預設常開
 - 手機連上該 WiFi 後以 UDP 傳輸資料（port 5000）
 - 封包格式與 USB Serial 完全一致，只是傳輸層不同
 - 不需外部路由器，野外也能用
@@ -188,7 +200,7 @@ public:
 
 ### WiFi AP 設定流程
 
-C6L 在基站模式下是自己開熱點（AP），不是去連別人的 WiFi，所以**不需要在 C6L 上輸入密碼或選 WiFi**。
+C6L 是自己開熱點（AP），不是去連別人的 WiFi，所以**不需要在 C6L 上輸入密碼或選 WiFi**。
 
 **預設值（韌體出廠設定）：**
 - SSID: `LoRaPTT_{DEVICE_ID}`（如 `LoRaPTT_A01B`）
@@ -197,7 +209,7 @@ C6L 在基站模式下是自己開熱點（AP），不是去連別人的 WiFi，
 
 **修改設定的方式：**
 
-1. **透過 APP（主要方式）：** 攜帶模式下 USB-C 接手機，APP 送設定指令，C6L 儲存到 Flash（NVS）
+1. **透過 APP（主要方式）：** APP（USB 或 WiFi 任一已握手傳輸層）送設定指令，C6L 儲存到 Flash（NVS）
 2. **透過 OLED + 按鈕（輔助方式）：** 韌體提供簡易選單，可查看/切換基本設定
 3. 設定一次存入 ESP32-C6 的 NVS（Non-Volatile Storage），斷電不遺失
 
@@ -216,24 +228,24 @@ C6L 內建 0.66" OLED（SSD1306, 64×48）和一顆使用者按鈕，韌體實�
 **顯示頁面（短按按鈕切換）：**
 
 ```
-頁面1：狀態           頁面2：網路           頁面3：LoRa
-┌────────────┐      ┌────────────┐      ┌────────────┐
-│ LoRaPTT    │      │ WiFi: ON   │      │ Freq: 920M │
-│ Mode: USB  │      │ SSID:      │      │ SF: 7      │
-│ Peer: 2    │      │ LoRaPTT_A  │      │ BW: 500k   │
-│ ▓▓▓▓░ Batt │      │ IP:192.4.1 │      │ TX: +22dBm │
-└────────────┘      └────────────┘      └────────────┘
+頁面1：ID/暱稱      頁面2：網路         頁面3：LoRa         頁面4：中繼
+┌────────────┐    ┌────────────┐    ┌────────────┐    ┌────────────┐
+│ ID:A01B    │    │ WiFi: ON   │    │ Freq:920M  │    │ Relay:42   │
+│ Name:NodeA │    │ LoRaPTT_   │    │ SF:7 BW500 │    │ Rx:120     │
+│ APP:USB+WiFi│   │ A01B       │    │ RSSI:-87   │    │ Tx:35      │
+│ ▓▓▓▓░ Batt │    │ IP:192.4.1 │    │ TX:+22dBm  │    │ RSSI:-87   │
+└────────────┘    └────────────┘    └────────────┘    └────────────┘
 ```
 
 **按鈕操作：**
 - 短按：切換顯示頁面
-- 長按 3 秒：切換攜帶/基站模式（切換後 RGB LED 變色提示 + 蜂鳴器嗶一聲）
-- 長按 6 秒：重置 WiFi 設定為出廠預設值
+- 長按 3 秒：開/關 WiFi AP（省電；切換後 RGB LED 變色提示 + 蜂鳴器嗶一聲）
+- 長按 6 秒：重置設定為出廠預設值
 
 **RGB LED 狀態指示：**
-- 綠色常亮：攜帶模式，USB 已連線
-- 藍色常亮：基站模式，WiFi AP 已啟動
-- 藍色閃爍：基站模式，等待手機連入
+- 綠色常亮：USB 有 APP 已握手連線
+- 藍色常亮：WiFi AP 已啟動且有手機連入
+- 藍色閃爍：WiFi AP 已啟動，等待手機連入
 - 紅色閃爍：LoRa 發送中
 - 黃色閃爍：LoRa 接收中
 - 紅色常亮：錯誤狀態
@@ -428,14 +440,14 @@ SX1262 硬體自主計時醒來，偵測 LoRa preamble（前導碼），無訊�
 
 ### 節點運作差異
 
-所有節點硬體與韌體完全相同，差異僅在是否接手機：
+所有節點硬體與韌體完全相同，差異僅在是否有 APP 握手連線：
 
-| 項目 | 有手機連接 | 無手機連接（無人中繼站） |
+| 項目 | 有 APP 連線 | 無 APP 連線（無人中繼站） |
 |------|-----------|----------------------|
 | 端點功能 | 收發自己的訊息 | 無（無 APP 處理） |
 | 中繼功能 | 同時轉發他人封包 | 只做轉發 |
-| 手機通訊 | USB Serial 或 WiFi | 關閉（自動偵測無 DTR + 無 WiFi 連入） |
-| 供電方式 | USB-C 接手機 | Grove 5V / USB-C 接行動電源或太陽能 |
+| 手機通訊 | USB Serial 和/或 WiFi（已握手者） | 無任何傳輸層握手（USB 僅供電或未接、WiFi 無 client） |
+| 供電方式 | USB-C 接手機/行動電源 | Grove 5V / USB-C 接行動電源或太陽能 |
 | OLED 顯示 | 完整狀態 | 中繼統計（轉發封包數、RSSI） |
 
 ### 部署建議
@@ -543,13 +555,14 @@ APP 端可讓使用者選擇通話模式：群組廣播或指定對象。
 
 ### 框架：Arduino + ESP-IDF
 
-- **功能：** USB Serial/WiFi ↔ LoRa 雙向透傳，支援攜帶模式（USB CDC）與基站模式（WiFi AP + UDP）
-- **攜帶模式：** USB Serial（CDC），透過 USB-C 直接與手機通訊，延遲最低
-- **基站模式：** WiFi AP 熱點 + UDP Server（port 5000），手機連上 WiFi 後以 UDP 收發
-- **通訊抽象：** USB Serial 和 WiFi 實作共同的 ICommInterface，LoRa handler 不需知道上層連線方式
-- **LoRa：** 使用 SX1262 驅動，收到手機資料就 LoRa 發送，收到 LoRa 資料就推給手機
-- **HMI：** OLED 顯示狀態 + 按鈕切換頁面/模式 + RGB LED 狀態指示 + 蜂鳴器提示
-- **設定：** 透過 USB Serial 接收 JSON 設定指令，儲存到 NVS（Non-Volatile Storage）
+- **功能：** USB Serial + WiFi ↔ LoRa 雙向透傳，**兩傳輸層可同時橋接**（無模式切換）
+- **USB Serial（CDC）：** 透過 USB-C 直接與手機通訊，延遲最低（需 APP 握手後啟用為資料通道）
+- **WiFi AP + UDP：** WiFi 熱點 + UDP Server（port 5000），預設常開，手機連上後以 UDP 收發
+- **連線握手（F-053）：** 任一傳輸層收到 APP hello 才視為「有 APP」並雙向橋接；純供電不送資料
+- **通訊抽象：** USB Serial 和 WiFi 實作共同的 ICommInterface；可同時掛多個傳輸層（多工），LoRa handler 不需知道上層連線方式
+- **LoRa：** 使用 SX1262 驅動，收到手機資料就 LoRa 發送，收到 LoRa 資料就推給所有已握手傳輸層
+- **HMI：** OLED 顯示狀態 + 按鈕切頁/WiFi 開關 + RGB LED 狀態指示 + 蜂鳴器提示
+- **設定：** 透過 USB/WiFi 接收 JSON 設定指令（與資料封包分流），儲存到 NVS
 - **不使用 Meshtastic 韌體**（Meshtastic 不支援語音串流，自寫精簡韌體延遲更低）
 
 ### PlatformIO 配置參考
@@ -576,10 +589,10 @@ lib_deps =
 firmware/
 ├── platformio.ini
 ├── src/
-│   ├── main.cpp                   # 主程式：偵測模式（DTR）+ 初始化各模組
+│   ├── main.cpp                   # 主程式：初始化各傳輸層（USB+WiFi 多工）+ 各模組
 │   ├── comm_interface.h           # 通訊抽象介面（ICommInterface）
-│   ├── usb_serial_service.h/.cpp  # USB Serial CDC（攜帶模式，實作 ICommInterface）
-│   ├── wifi_service.h/.cpp        # WiFi AP + UDP Server（基站模式，實作 ICommInterface）
+│   ├── usb_serial_service.h/.cpp  # USB Serial CDC（實作 ICommInterface）
+│   ├── wifi_service.h/.cpp        # WiFi AP + UDP Server（實作 ICommInterface）
 │   ├── lora_handler.h/.cpp        # SX1262 LoRa 收發
 │   ├── crypto.h/.cpp              # AES-128-CTR 加解密 + HMAC 驗證（mbedtls）
 │   ├── packet.h/.cpp              # 封包格式定義、組包/解包（含 SRC_ID/DST_ID/HOP）
@@ -629,22 +642,22 @@ public interface ICommService
     CommMode Mode { get; }
 }
 
-/// <summary>通訊模式列舉</summary>
+/// <summary>通訊傳輸層列舉</summary>
 public enum CommMode
 {
-    /// <summary>攜帶模式 — USB Serial（CDC）連線</summary>
+    /// <summary>USB Serial（CDC）連線</summary>
     UsbSerial,
-    /// <summary>基站模式 — WiFi UDP 連線</summary>
+    /// <summary>WiFi UDP 連線</summary>
     WiFi
 }
 ```
 
 ### APP 模組
 
-1. **通訊模組（雙模）**
-   - `UsbSerialCommService`：偵測 USB-C 連接的 C6L、Serial 讀寫（攜帶模式）
-   - `WiFiCommService`：連接 C6L WiFi AP、UDP 收發（基站模式）
-   - APP 啟動時偵測 USB 裝置和 WiFi SSID，讓使用者選擇或自動判斷連線方式
+1. **通訊模組（雙傳輸層）**
+   - `UsbSerialCommService`：偵測 USB-C 連接的 C6L、Serial 讀寫
+   - `WiFiCommService`：連接 C6L WiFi AP、UDP 收發
+   - APP 連上後送握手（F-053）；可偵測 USB 裝置和 WiFi SSID，讓使用者選擇連線方式
 
 2. **音訊錄製模組（平台原生）**
    - Android: `AudioRecord`（PCM 16-bit, 8000Hz, Mono）
@@ -671,8 +684,8 @@ app/
 │   ├── MauiProgram.cs
 │   ├── Services/
 │   │   ├── ICommService.cs           # 通訊抽象介面（USB Serial / WiFi 共用）
-│   │   ├── UsbSerialCommService.cs   # USB Serial CDC 實作（攜帶模式）
-│   │   ├── WiFiCommService.cs        # WiFi UDP 實作（基站模式，使用 UdpClient）
+│   │   ├── UsbSerialCommService.cs   # USB Serial CDC 實作
+│   │   ├── WiFiCommService.cs        # WiFi UDP 實作（使用 UdpClient）
 │   │   ├── AudioRecordService.cs     # 平台錄音抽象
 │   │   ├── AudioPlayService.cs       # 平台播放抽象
 │   │   └── Codec2Service.cs          # P/Invoke Codec2
@@ -759,5 +772,8 @@ app/
 - 點對點訊息有 ACK 確認，廣播/群組訊息不回 ACK
 - Device ID 出廠燒錄，OLED 螢幕顯示，APP 可編輯暱稱
 - 新增聯絡人支援手動輸入 ID 和廣播探測自動發現兩種方式
-- 基站模式 WiFi AP 的 SSID/密碼應可透過 APP 或 USB Serial 設定，避免寫死
+- WiFi AP 的 SSID/密碼應可透過 APP（USB 或 WiFi）設定，避免寫死；預設 SSID 帶 Device ID
 - WiFi UDP 傳輸不保證送達順序，APP 端應根據封包 SEQ 排序或丟棄亂序封包
+- USB host 接上不代表有 APP（可能只供電）；需靠 F-053 握手區分資料端與純供電
+- 兩傳輸層（USB+WiFi）可同時橋接，無「使用模式」切換；中繼能力恆開
+- 韌體 OTA（F-060~064）走 USB/WiFi 推送，需雙 app 分割區的 partition table

@@ -1,0 +1,141 @@
+@page "/chat"
+@using LoRaPTT.Models
+@using LoRaPTT.ViewModels
+@inject ChatViewModel VM
+@implements IDisposable
+
+<div class="d-flex flex-column vh-100 bg-dark text-white">
+
+    <!-- 狀態列 -->
+    <div class="p-2 border-bottom border-secondary d-flex align-items-center gap-2">
+        <span class="badge @(VM.IsConnected ? "bg-success" : "bg-secondary")">
+            @(VM.IsConnected ? "● 已連線" : "○ 未連線")
+        </span>
+        <small class="text-muted flex-grow-1 text-truncate">@VM.StatusMessage</small>
+        @if (!VM.IsConnected)
+        {
+            <button class="btn btn-sm btn-outline-light" @onclick="Connect">連接</button>
+        }
+        <button class="btn btn-sm btn-outline-info" @onclick="Ping" disabled="@(!VM.IsConnected)">探測</button>
+    </div>
+
+    <!-- 目標與暱稱設定 -->
+    <div class="p-2 border-bottom border-secondary d-flex flex-wrap align-items-center gap-2">
+        <label class="small text-muted mb-0">目標</label>
+        <input class="form-control form-control-sm bg-dark text-white border-secondary"
+               style="width:7rem" @bind="VM.TargetHex" placeholder="FFFF" />
+        <button class="btn btn-sm btn-outline-secondary" @onclick='() => VM.TargetHex = "FFFF"'>廣播</button>
+
+        @if (VM.Contacts.Count > 0)
+        {
+            <select class="form-select form-select-sm bg-dark text-white border-secondary"
+                    style="width:auto" @onchange="OnPickContact">
+                <option value="">選擇聯絡人...</option>
+                @foreach (var c in VM.Contacts)
+                {
+                    <option value="@c.IdHex">@c.DisplayName (@c.IdHex)</option>
+                }
+            </select>
+        }
+
+        <label class="small text-muted mb-0 ms-auto">暱稱</label>
+        <input class="form-control form-control-sm bg-dark text-white border-secondary"
+               style="width:8rem" @bind="VM.Nickname" />
+    </div>
+
+    <!-- 訊息列表 -->
+    <div class="flex-grow-1 overflow-auto p-2" id="msg-list">
+        @if (VM.Messages.Count == 0)
+        {
+            <p class="text-muted text-center mt-4">尚無訊息。輸入目標 ID（廣播為 FFFF）後送出。</p>
+        }
+        @foreach (var m in VM.Messages)
+        {
+            var outgoing = m.Direction == MessageDirection.Outgoing;
+            <div class="d-flex mb-2 @(outgoing ? "justify-content-end" : "justify-content-start")">
+                <div class="msg-bubble @(outgoing ? "bg-primary" : "bg-secondary")">
+                    @if (!outgoing)
+                    {
+                        <div class="small text-info">
+                            0x@(m.PeerId.ToString("X4"))
+                            @if (m.IsGroupOrBroadcast)
+                            {
+                                <span class="badge bg-dark ms-1">@(Services.Protocol.DstId.IsBroadcast(m.DstId) ? "廣播" : "群組")</span>
+                            }
+                        </div>
+                    }
+                    <div>@m.Text</div>
+                    <div class="small text-white-50 text-end mt-1">
+                        @m.Timestamp.ToString("HH:mm")
+                        @if (outgoing)
+                        {
+                            <span class="ms-1">@StatusIcon(m.Status)</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- 輸入列 -->
+    <div class="p-2 border-top border-secondary d-flex gap-2">
+        <input class="form-control bg-dark text-white border-secondary"
+               placeholder="輸入訊息..." @bind="VM.DraftText" @bind:event="oninput"
+               @onkeydown="OnKeyDown" disabled="@(!VM.IsConnected)" />
+        <button class="btn btn-primary" @onclick="Send"
+                disabled="@(!VM.IsConnected || string.IsNullOrWhiteSpace(VM.DraftText))">
+            送出
+        </button>
+    </div>
+</div>
+
+<style>
+    .msg-bubble {
+        max-width: 78%;
+        padding: 6px 10px;
+        border-radius: 12px;
+        word-break: break-word;
+    }
+</style>
+
+@code {
+    protected override void OnInitialized()
+    {
+        VM.StateChanged += OnVmChanged;
+    }
+
+    private async void OnVmChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Connect() => await VM.ConnectCommand.ExecuteAsync(null);
+    private async Task Send()    => await VM.SendCommand.ExecuteAsync(null);
+    private async Task Ping()    => await VM.PingCommand.ExecuteAsync(null);
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && VM.IsConnected && !string.IsNullOrWhiteSpace(VM.DraftText))
+            await Send();
+    }
+
+    private void OnPickContact(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(v)) VM.TargetHex = v;
+    }
+
+    private static string StatusIcon(MessageStatus s) => s switch
+    {
+        MessageStatus.Sending   => "🕓",
+        MessageStatus.Delivered => "✓✓",
+        MessageStatus.Sent      => "✓",
+        MessageStatus.Failed    => "⚠",
+        _ => "",
+    };
+
+    public void Dispose()
+    {
+        VM.StateChanged -= OnVmChanged;
+    }
+}

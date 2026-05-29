@@ -28,6 +28,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<ICommService, WiFiCommService>();
         // builder.Services.AddSingleton<ICommService, UsbSerialCommService>();
 
+        // ── 文字訊息服務（封包組裝/解析、ACK、PING 探測）──────
+        builder.Services.AddSingleton<IMessagingService, MessagingService>();
+
         // ── Codec2 編解碼 ────────────────────────────────────
         builder.Services.AddSingleton<Codec2Service>();
 
@@ -41,6 +44,7 @@ public static class MauiProgram
 #endif
 
         builder.Services.AddTransient<MainViewModel>();
+        builder.Services.AddSingleton<ViewModels.ChatViewModel>();
 
         return builder.Build();
     }

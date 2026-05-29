@@ -25,18 +25,21 @@ static bool detectCarryMode() {
 }
 
 // ── 收到手機資料 → LoRa 發送 ──────────────────────────────
+// 手機送來的是完整 LoRa 封包（APP 已填好 DST_ID / TYPE / PAYLOAD），
+// 韌體僅覆寫 SRC_ID / SEQ / HOP 並重算 MAC（於 sendPacket 內完成）。
+// 手機端 SRC/SEQ/HOP/MAC 為佔位值，會被忽略。
 static void onCommReceived(const uint8_t* data, size_t len) {
     PowerMgr::onActivity(); // 有活動 → 切換到通話模式
 
     LoRaPacket pkt;
-    pkt.dstId      = DST_BROADCAST; // 預設廣播，APP 可指定目標
-    pkt.type       = PKT_TYPE_VOICE;
-    pkt.payloadLen = min(len, (size_t)PKT_MAX_PAYLOAD);
-    memcpy(pkt.payload, data, pkt.payloadLen);
+    if (!packetDeserialize(data, len, pkt)) {
+        Serial.println("[Main] 手機封包解析失敗，丟棄");
+        return;
+    }
 
     Led::setLoRaTx();
-    loraHandler.sendPacket(pkt);
-    Led::setCarryMode(); // 恢復狀態 LED
+    loraHandler.sendPacket(pkt); // 內部填寫 SRC/SEQ/HOP + MAC
+    Led::setCarryMode();         // 恢復狀態 LED
 }
 
 // ── 收到 LoRa 封包（已解密）→ 推給手機 ─────────────────────

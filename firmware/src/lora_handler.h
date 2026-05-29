@@ -43,7 +43,6 @@ private:
     SX1262  _radio{&_mod};
     LoRaPacketCallback _callback;
     uint16_t _myId = 0;
-    uint16_t _txSeq = 0;
     bool     _dutyCycleEnabled = false;
     volatile bool _rxFlag = false;
 };

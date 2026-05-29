@@ -13,14 +13,18 @@ import asyncio
 import struct
 import time
 import sys
+import zlib
+
+HOP_OFFSET = 4  # MAC 計算時跳過的 HOP 位移（與韌體一致）
 
 
 def build_packet(src_id: int, dst_id: int, hop: int, seq: int,
                  pkt_type: int, payload: bytes) -> bytes:
-    """組合 LoRa 封包"""
+    """組合 LoRa 封包（Phase1 不加密，MAC 用真實 CRC32，與韌體一致）"""
     header = struct.pack(">HHBHB", src_id, dst_id, hop, seq, pkt_type)
-    fake_mac = b'\xCA\xFE\xBA\xBE'
-    return header + payload + fake_mac
+    data = header[:HOP_OFFSET] + header[HOP_OFFSET + 1:] + payload
+    mac = struct.pack(">I", zlib.crc32(data) & 0xFFFFFFFF)
+    return header + payload + mac
 
 
 def parse_packet(data: bytes) -> dict:

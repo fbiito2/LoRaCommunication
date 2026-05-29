@@ -31,7 +31,8 @@ using LoRaPacketCallback = std::function<void(const LoRaPacket& pkt)>;
 class LoRaHandler {
 public:
     bool begin(uint16_t myId);
-    bool sendPacket(LoRaPacket& pkt); // 加密 + 序列化 + 發送
+    bool sendPacket(LoRaPacket& pkt);              // 設定 src/seq/hop + 加密 + MAC + 發送
+    bool sendRaw(const uint8_t* data, size_t len); // 原樣發送（中繼轉發用，不改封包內容）
     void setPacketCallback(LoRaPacketCallback cb);
     void setDutyCycle(bool enable);   // 電源管理切換
     void loop();

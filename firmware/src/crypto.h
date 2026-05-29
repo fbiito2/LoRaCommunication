@@ -2,26 +2,34 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// ── 金鑰長度 ───────────────────────────────────────────────
-#define AES_KEY_LEN    16   // AES-128
-#define HMAC_KEY_LEN   32   // HMAC-SHA256
-#define HMAC_MAC_LEN    4   // 截斷取前 4 bytes
+// ── Phase 切換旗標 ─────────────────────────────────────────
+// Phase 1（預設）：不加密，MAC 用 CRC32 做完整性檢查
+// Phase 2：於 build_flags 定義 ENABLE_ENCRYPTION=1，啟用 AES-128-CTR + HMAC-SHA256
+#ifndef ENABLE_ENCRYPTION
+#define ENABLE_ENCRYPTION 0
+#endif
 
-/// @brief 加密模組初始化（載入 PSK）
-void cryptoInit(const uint8_t aesKey[AES_KEY_LEN],
-                const uint8_t hmacKey[HMAC_KEY_LEN]);
+// ── 長度常數 ───────────────────────────────────────────────
+#define MAC_LEN       4    // CRC32 與 HMAC 截斷皆為 4 bytes
+#define AES_KEY_LEN   16   // AES-128（Phase 2）
+#define HMAC_KEY_LEN  32   // HMAC-SHA256（Phase 2）
 
-/// @brief AES-128-CTR 加密（加解密同一函式）
-/// @param nonce 16 bytes，建議組成：[SRC_ID 2B][SEQ 2B][0x00 * 12]
-void aesCtr(const uint8_t* in, uint8_t* out, size_t len,
-            const uint8_t nonce[16]);
+/// @brief 加密模組初始化
+/// @param aesKey  Phase 2 使用；Phase 1 可傳 nullptr
+/// @param hmacKey Phase 2 使用；Phase 1 可傳 nullptr
+void cryptoInit(const uint8_t* aesKey, const uint8_t* hmacKey);
 
-/// @brief 計算 HMAC-SHA256 並截斷為 4 bytes MAC
-void hmacCompute(const uint8_t* data, size_t len, uint8_t mac[HMAC_MAC_LEN]);
+/// @brief 加密 payload（就地）
+///        Phase 1：直通不變更；Phase 2：AES-128-CTR（nonce = srcId+seq）
+void payloadEncrypt(uint8_t* payload, size_t len, uint16_t srcId, uint16_t seq);
 
-/// @brief 比對 MAC（時序安全比較，防時序攻擊）
-bool hmacVerify(const uint8_t* data, size_t len,
-                const uint8_t expectedMac[HMAC_MAC_LEN]);
+/// @brief 解密 payload（與加密同邏輯，CTR 模式可逆）
+void payloadDecrypt(uint8_t* payload, size_t len, uint16_t srcId, uint16_t seq);
 
-/// @brief 組合 AES-CTR nonce：[srcId 2B][seq 2B][0x00 * 12]
-void buildNonce(uint16_t srcId, uint16_t seq, uint8_t nonce[16]);
+/// @brief 計算封包 MAC（計算時跳過 HOP 欄位，使中繼改 HOP 不破壞 MAC）
+///        Phase 1：CRC32；Phase 2：HMAC-SHA256 截斷 4 bytes
+/// @param buf 序列化的 header + payload（不含尾端 MAC）
+void packetMac(const uint8_t* buf, size_t len, uint8_t mac[MAC_LEN]);
+
+/// @brief 驗證封包 MAC（時序安全比較）
+bool packetMacVerify(const uint8_t* buf, size_t len, const uint8_t mac[MAC_LEN]);

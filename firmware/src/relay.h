@@ -12,19 +12,15 @@ class RelayHandler {
 public:
     void init(uint16_t myId, LoRaSendFunc sendFn);
 
-    /// @brief 收到 LoRa 封包後呼叫，決定是否轉發
-    /// @return true = 這個封包是給自己的，應交給手機
+    /// @brief 收到 LoRa 封包後呼叫：去重、必要時轉發，並判斷是否屬於本機
+    /// @return true = 這個封包應交給手機 APP（自己/廣播/群組，群組成員資格由 APP 判斷）
     bool process(LoRaPacket& pkt);
-
-    void setEnabled(bool en) { _enabled = en; }
-    bool isEnabled()  const  { return _enabled; }
 
 private:
     bool _isDuplicate(uint16_t srcId, uint16_t seq);
     void _markSeen(uint16_t srcId, uint16_t seq);
 
     uint16_t    _myId   = 0;
-    bool        _enabled = true;
     LoRaSendFunc _sendFn;
 
     // 去重快取（ring buffer）

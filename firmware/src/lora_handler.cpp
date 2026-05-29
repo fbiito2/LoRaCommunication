@@ -42,25 +42,26 @@ bool LoRaHandler::sendPacket(LoRaPacket& pkt) {
     pkt.seq   = _txSeq++;
     pkt.hop   = MAX_HOP;
 
-    // 組合 nonce 並加密 payload
-    uint8_t nonce[16];
-    buildNonce(pkt.srcId, pkt.seq, nonce);
-    aesCtr(pkt.payload, pkt.payload, pkt.payloadLen, nonce);
+    // 加密 payload（Phase 1 為直通不變更）
+    payloadEncrypt(pkt.payload, pkt.payloadLen, pkt.srcId, pkt.seq);
 
-    // 計算 MAC（對 header + 加密後 payload 計算）
+    // 計算 MAC（對 header + payload，排除尾端 MAC；內部跳過 HOP 欄位）
     uint8_t tmp[PKT_MAX_LEN];
     size_t tmpLen = packetSerialize(pkt, tmp, sizeof(tmp));
-    // 排除 MAC 尾端再計算（MAC 位於最後 4 bytes）
-    hmacCompute(tmp, tmpLen - PKT_MAC_LEN, pkt.mac);
+    packetMac(tmp, tmpLen - PKT_MAC_LEN, pkt.mac);
 
     // 最終序列化
     uint8_t buf[PKT_MAX_LEN];
     size_t  len = packetSerialize(pkt, buf, sizeof(buf));
     if (len == 0) return false;
 
+    return sendRaw(buf, len);
+}
+
+bool LoRaHandler::sendRaw(const uint8_t* data, size_t len) {
     // 待機模式用長前導碼，確保接收端 RxDutyCycle 能偵測到
     _radio.setPreambleLength(LORA_PREAMBLE_LONG);
-    int state = _radio.transmit(buf, len);
+    int state = _radio.transmit(const_cast<uint8_t*>(data), len);
     _radio.setPreambleLength(LORA_PREAMBLE_SHORT);
     _radio.startReceive();
 
@@ -109,8 +110,8 @@ void LoRaHandler::loop() {
         return;
     }
 
-    // HMAC 驗證（對 header + 加密 payload，不含 MAC 尾端）
-    if (!hmacVerify(buf, len - PKT_MAC_LEN, pkt.mac)) {
+    // MAC 驗證（對 header + payload，不含 MAC 尾端；內部跳過 HOP 欄位）
+    if (!packetMacVerify(buf, len - PKT_MAC_LEN, pkt.mac)) {
         Serial.println("[LoRa] MAC 驗證失敗，封包丟棄");
         _radio.startReceive();
         return;
@@ -123,10 +124,8 @@ void LoRaHandler::loop() {
     bool forMe = relayHandler.process(pkt);
 
     if (forMe && _callback) {
-        // 解密 payload 後交給上層
-        uint8_t nonce[16];
-        buildNonce(pkt.srcId, pkt.seq, nonce);
-        aesCtr(pkt.payload, pkt.payload, pkt.payloadLen, nonce);
+        // 解密 payload 後交給上層（Phase 1 為直通不變更）
+        payloadDecrypt(pkt.payload, pkt.payloadLen, pkt.srcId, pkt.seq);
         _callback(pkt);
     }
 

@@ -25,24 +25,36 @@ import asyncio
 import struct
 import time
 import sys
+import zlib
 from typing import Optional
 
 # ── 封包常數 ─────────────────────────────────────────────
 HEADER_SIZE = 8       # SRC_ID(2) + DST_ID(2) + HOP(1) + SEQ(2) + TYPE(1)
-MAC_SIZE = 4          # HMAC-SHA256 截斷 4 bytes
+MAC_SIZE = 4          # MAC 長度（Phase1 CRC32 / Phase2 HMAC 截斷）
+HOP_OFFSET = 4        # HOP 欄位位移（MAC 計算時跳過，與韌體一致）
 DST_BROADCAST = 0xFFFF
+DST_GROUP_MIN = 0xFFE0
+DST_GROUP_MAX = 0xFFEF
 
 PKT_TYPE_TEXT = 0x01
 PKT_TYPE_VOICE = 0x02
 PKT_TYPE_CONTROL = 0x03
-PKT_TYPE_SENSOR = 0x04
+PKT_TYPE_ACK = 0x04
+PKT_TYPE_PING = 0x05
 
 TYPE_NAMES = {
     PKT_TYPE_TEXT: "文字",
     PKT_TYPE_VOICE: "語音",
     PKT_TYPE_CONTROL: "控制",
-    PKT_TYPE_SENSOR: "感測器",
+    PKT_TYPE_ACK: "ACK",
+    PKT_TYPE_PING: "PING",
 }
+
+
+def compute_mac(header: bytes, payload: bytes) -> bytes:
+    """計算 Phase1 CRC32 MAC（跳過 HOP 欄位，與韌體 packetMac 一致）"""
+    data = header[:HOP_OFFSET] + header[HOP_OFFSET + 1:] + payload
+    return struct.pack(">I", zlib.crc32(data) & 0xFFFFFFFF)
 
 
 def parse_packet(data: bytes) -> Optional[dict]:
@@ -73,10 +85,10 @@ def parse_packet(data: bytes) -> Optional[dict]:
 
 def build_packet(src_id: int, dst_id: int, hop: int, seq: int,
                  pkt_type: int, payload: bytes) -> bytes:
-    """組合 LoRa 封包（不含真實加密，MAC 用假值填充）"""
+    """組合 LoRa 封包（Phase1 不加密，MAC 用真實 CRC32，與韌體一致）"""
     header = struct.pack(">HHBHB", src_id, dst_id, hop, seq, pkt_type)
-    fake_mac = b'\xDE\xAD\xBE\xEF'  # Mock 用假 MAC
-    return header + payload + fake_mac
+    mac = compute_mac(header, payload)
+    return header + payload + mac
 
 
 def frame_packet(data: bytes) -> bytes:

@@ -118,9 +118,9 @@ void setup() {
     loraHandler.begin(_cfg.deviceId);
     loraHandler.setPacketCallback(onLoRaReceived);
 
-    // Relay 初始化（廣播封包自動轉發）
+    // Relay 初始化：轉發時用 sendRaw 原樣送出，保留原始 SRC/SEQ/MAC（去重依據）
     relayHandler.init(_cfg.deviceId, [](const uint8_t* d, size_t l) {
-        return loraHandler.sendPacket(*(LoRaPacket*)nullptr); // TODO: 修正為正確呼叫
+        return loraHandler.sendRaw(d, l);
     });
 
     // 電源管理（RxDutyCycle 省電）

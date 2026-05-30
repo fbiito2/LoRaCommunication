@@ -31,6 +31,9 @@ public static class MauiProgram
         // ── 文字訊息服務（封包組裝/解析、ACK、PING 探測）──────
         builder.Services.AddSingleton<IMessagingService, MessagingService>();
 
+        // ── 通訊錄/群組持久化（F-003 / F-020~022）────────────
+        builder.Services.AddSingleton<RosterStore>();
+
         // ── Codec2 編解碼 ────────────────────────────────────
         builder.Services.AddSingleton<Codec2Service>();
 

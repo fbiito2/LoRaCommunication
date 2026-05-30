@@ -26,22 +26,80 @@
                style="width:7rem" @bind="VM.TargetHex" placeholder="FFFF" />
         <button class="btn btn-sm btn-outline-secondary" @onclick='() => VM.TargetHex = "FFFF"'>廣播</button>
 
-        @if (VM.Contacts.Count > 0)
-        {
-            <select class="form-select form-select-sm bg-dark text-white border-secondary"
-                    style="width:auto" @onchange="OnPickContact">
-                <option value="">選擇聯絡人...</option>
-                @foreach (var c in VM.Contacts)
-                {
-                    <option value="@c.IdHex">@c.DisplayName (@c.IdHex)</option>
-                }
-            </select>
-        }
+        <select class="form-select form-select-sm bg-dark text-white border-secondary"
+                style="width:auto" @onchange="OnPickTarget">
+            <option value="">選擇目標...</option>
+            @if (VM.Contacts.Count > 0)
+            {
+                <optgroup label="聯絡人">
+                    @foreach (var c in VM.Contacts)
+                    {
+                        <option value="@c.IdHex">@c.DisplayName (@c.IdHex)</option>
+                    }
+                </optgroup>
+            }
+            @{ var joined = VM.Groups.Where(g => g.Joined).ToList(); }
+            @if (joined.Count > 0)
+            {
+                <optgroup label="群組">
+                    @foreach (var g in joined)
+                    {
+                        <option value="@g.IdHex">@g.DisplayName (@g.IdHex)</option>
+                    }
+                </optgroup>
+            }
+        </select>
 
-        <label class="small text-muted mb-0 ms-auto">暱稱</label>
-        <input class="form-control form-control-sm bg-dark text-white border-secondary"
-               style="width:8rem" @bind="VM.Nickname" />
+        <button class="btn btn-sm btn-outline-light ms-auto" @onclick="() => VM.ShowManage = !VM.ShowManage">
+            @(VM.ShowManage ? "收合" : "管理")
+        </button>
     </div>
+
+    <!-- 管理面板：聯絡人 / 群組 / 暱稱（F-002/F-003/F-020~022）-->
+    @if (VM.ShowManage)
+    {
+        <div class="p-2 border-bottom border-secondary small" style="max-height:40vh; overflow-auto;">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <label class="text-muted mb-0">暱稱</label>
+                <input class="form-control form-control-sm bg-dark text-white border-secondary"
+                       style="width:10rem" @bind="VM.Nickname" />
+            </div>
+
+            <div class="text-info">聯絡人</div>
+            <div class="d-flex gap-2 mb-1">
+                <input class="form-control form-control-sm bg-dark text-white border-secondary"
+                       style="width:6rem" placeholder="ID(如A001)" @bind="VM.NewContactId" />
+                <input class="form-control form-control-sm bg-dark text-white border-secondary"
+                       style="width:8rem" placeholder="暱稱" @bind="VM.NewContactName" />
+                <button class="btn btn-sm btn-outline-success" @onclick="AddContact">新增</button>
+            </div>
+            @foreach (var c in VM.Contacts)
+            {
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="flex-grow-1 text-truncate">@c.DisplayName <span class="text-muted">(@c.IdHex)</span></span>
+                    <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => VM.SelectTargetCommand.Execute(c.IdHex)">選為目標</button>
+                </div>
+            }
+
+            <div class="text-info mt-2">群組</div>
+            <div class="d-flex gap-2 mb-1">
+                <input class="form-control form-control-sm bg-dark text-white border-secondary"
+                       style="width:10rem" placeholder="群組名稱" @bind="VM.NewGroupName" />
+                <button class="btn btn-sm btn-outline-success" @onclick="CreateGroup">建立</button>
+            </div>
+            @foreach (var g in VM.Groups)
+            {
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="flex-grow-1 text-truncate">@g.DisplayName <span class="text-muted">(@g.IdHex)</span></span>
+                    <button class="btn btn-sm py-0 @(g.Joined ? "btn-success" : "btn-outline-secondary")"
+                            @onclick="() => VM.ToggleGroupJoinCommand.Execute(g)">
+                        @(g.Joined ? "已加入" : "加入")
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => VM.SelectTargetCommand.Execute(g.IdHex)">選為目標</button>
+                </div>
+            }
+        </div>
+    }
 
     <!-- 訊息列表 -->
     <div class="flex-grow-1 overflow-auto p-2" id="msg-list">
@@ -82,12 +140,15 @@
     </div>
 
     <!-- 輸入列 -->
-    <div class="p-2 border-top border-secondary d-flex gap-2">
-        <input class="form-control bg-dark text-white border-secondary"
+    <div class="p-2 border-top border-secondary d-flex align-items-center gap-2">
+        <input class="form-control bg-dark text-white @(VM.DraftOverLimit ? "border-danger" : "border-secondary")"
                placeholder="輸入訊息..." @bind="VM.DraftText" @bind:event="oninput"
                @onkeydown="OnKeyDown" disabled="@(!VM.IsConnected)" />
+        <span class="small @(VM.DraftOverLimit ? "text-danger" : "text-muted")" style="white-space:nowrap">
+            @VM.DraftByteCount/@VM.DraftMaxBytes
+        </span>
         <button class="btn btn-primary" @onclick="Send"
-                disabled="@(!VM.IsConnected || string.IsNullOrWhiteSpace(VM.DraftText))">
+                disabled="@(!VM.IsConnected || string.IsNullOrWhiteSpace(VM.DraftText) || VM.DraftOverLimit)">
             送出
         </button>
     </div>
@@ -116,14 +177,17 @@
     private async Task Connect() => await VM.ConnectCommand.ExecuteAsync(null);
     private async Task Send()    => await VM.SendCommand.ExecuteAsync(null);
     private async Task Ping()    => await VM.PingCommand.ExecuteAsync(null);
+    private void AddContact()    => VM.AddContactCommand.Execute(null);
+    private void CreateGroup()   => VM.CreateGroupCommand.Execute(null);
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && VM.IsConnected && !string.IsNullOrWhiteSpace(VM.DraftText))
+        if (e.Key == "Enter" && VM.IsConnected
+            && !string.IsNullOrWhiteSpace(VM.DraftText) && !VM.DraftOverLimit)
             await Send();
     }
 
-    private void OnPickContact(ChangeEventArgs e)
+    private void OnPickTarget(ChangeEventArgs e)
     {
         var v = e.Value?.ToString();
         if (!string.IsNullOrEmpty(v)) VM.TargetHex = v;

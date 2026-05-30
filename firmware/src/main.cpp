@@ -11,6 +11,7 @@
 #include "display.h"
 #include "button.h"
 #include "led.h"
+#include "ota_service.h"
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
 #define FW_VERSION "0.3.0"
@@ -171,6 +172,9 @@ void setup() {
     _transports[1] = { &wifiService, false };
     _transportCount = 2;
 
+    // 韌體 OTA HTTP 伺服器（F-060~064），開在 WiFi AP 上
+    Ota::begin(FW_VERSION);
+
     // 兩傳輸層各自掛 onReceive，帶入索引
     usbSerialService.onReceive([](const uint8_t* d, size_t l) { onLinkReceived(0, d, l); });
     wifiService.onReceive(   [](const uint8_t* d, size_t l) { onLinkReceived(1, d, l); });
@@ -219,6 +223,7 @@ void setup() {
 void loop() {
     usbSerialService.loop();
     wifiService.loop();
+    Ota::loop(); // 處理 HTTP OTA 更新請求
 
     // 更新 OLED 統計與 APP 連線狀態
     bool u = _transports[0].hasApp, w = _transports[1].hasApp;

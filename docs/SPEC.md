@@ -160,15 +160,15 @@ C6L 提供兩種傳輸層，**可同時啟用**，上層封包格式完全一致
 
 | 功能 | 說明 |
 |------|------|
-| **F-060** OTA 推送 | APP 透過已握手的傳輸層（USB 或 WiFi）把韌體 `.bin` 推送到 C6L；不走 LoRa（影像過大） |
-| **F-061** 雙分割區更新 | 寫入非作用中的 OTA 分割區（A/B），校驗（大小/CRC）通過後切換開機分割區並重開機 |
-| **F-062** 進度顯示 | OLED 顯示更新進度 %；寫入/校驗失敗則中止並保留舊韌體 |
-| **F-063** 失敗回滾 | 新韌體開機未通過自檢 → 下次開機自動回退舊版（ESP32 rollback） |
-| **F-064** 版本查詢 | APP 可讀取 C6L 目前韌體版本（併入 F-053 握手回應） |
+| **F-060** OTA 推送 | APP 把韌體 `.bin` 推送到 C6L；走 **WiFi HTTP（TCP，port 80，`POST /update`）** 確保可靠（UDP 不適合韌體影像）；不走 LoRa（影像過大） |
+| **F-061** 雙分割區更新 | 以 `Update.h` 寫入非作用中的 OTA 分割區（app0/app1），校驗通過後切換開機分割區並重開機 |
+| **F-062** 進度顯示 | OLED 顯示更新進度 %（上傳期間直接繪製進度條）；寫入/校驗失敗則中止並保留舊韌體 |
+| **F-063** 失敗回滾 | 新韌體開機未通過自檢 → 回退舊版。註：完整 rollback 需 bootloader `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`（Arduino 預設未開，列為後續 sdkconfig 工項） |
+| **F-064** 版本查詢 | APP 可讀取 C6L 韌體版本（握手 hello-ack 的 `fw_ver`，或 `GET /version`） |
 
 > **手機 APP 本身的更新**走平台正常管道（Android APK/Play、iOS TestFlight/App Store），不由 C6L 負責。
 >
-> **韌體配置前提：** OTA 需使用含**兩個 app 分割區**的 partition table（16MB Flash 充裕）；目前預設單一 app 分割表需調整。實作用 Arduino `Update.h`。
+> **韌體配置：** partition table 用 `default_16MB.csv`（含 app0/app1 雙 OTA 分割區，各 6.5MB），flash size 設 16MB 對應 Unit C6L 實機。OTA 走獨立 HTTP（TCP）通道，與 UDP:5000 資料通道分離。
 
 ---
 

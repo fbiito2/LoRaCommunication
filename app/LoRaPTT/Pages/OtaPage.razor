@@ -1,0 +1,116 @@
+@page "/ota"
+@using LoRaPTT.Services
+@using Microsoft.Maui.Storage
+@using Microsoft.Extensions.Logging
+@inject OtaService Ota
+@inject ILogger<OtaPage> Logger
+
+<div class="d-flex flex-column vh-100 bg-dark text-white p-3">
+    <h5>韌體更新 (OTA)</h5>
+    <p class="text-muted small">透過 WiFi 將韌體 <code>.bin</code> 推送到 C6L（需先連上 C6L 的 WiFi 熱點）。</p>
+
+    <div class="mb-3 d-flex align-items-center gap-2">
+        <label class="small text-muted mb-0">C6L 位址</label>
+        <input class="form-control form-control-sm bg-dark text-white border-secondary"
+               style="width:11rem" @bind="_host" />
+        <button class="btn btn-sm btn-outline-info" @onclick="CheckVersion" disabled="@_busy">查詢版本</button>
+        @if (!string.IsNullOrEmpty(_remoteVersion))
+        {
+            <span class="badge bg-secondary">韌體 @_remoteVersion</span>
+        }
+    </div>
+
+    <div class="mb-3 d-flex align-items-center gap-2">
+        <button class="btn btn-outline-light" @onclick="PickFile" disabled="@_busy">選擇 .bin</button>
+        <span class="small text-truncate">@(_fileName ?? "尚未選擇檔案")</span>
+    </div>
+
+    <button class="btn btn-primary mb-3" @onclick="Upload"
+            disabled="@(_busy || _file is null)">
+        @(_busy ? "上傳中..." : "開始更新")
+    </button>
+
+    @if (_busy || _progress > 0)
+    {
+        <div class="progress mb-2" style="height:22px">
+            <div class="progress-bar @(_progress >= 100 ? "bg-success" : "")"
+                 role="progressbar" style="width:@(_progress)%">@_progress%</div>
+        </div>
+    }
+
+    <p class="@(_error ? "text-danger" : "text-info")">@_status</p>
+
+    <p class="text-muted small mt-auto">
+        更新期間 C6L 的 OLED 會顯示進度，完成後自動重開機；請勿中途斷電或斷線。
+    </p>
+</div>
+
+@code {
+    private string _host = OtaService.DefaultHost;
+    private string? _remoteVersion;
+    private string? _fileName;
+    private FileResult? _file;
+    private bool _busy;
+    private bool _error;
+    private int _progress;
+    private string _status = "";
+
+    private async Task CheckVersion()
+    {
+        _busy = true; _error = false; _status = "查詢中...";
+        _remoteVersion = await Ota.GetVersionAsync(_host);
+        _status = _remoteVersion is null ? "查詢失敗，請確認已連上 C6L WiFi" : "";
+        _error = _remoteVersion is null;
+        _busy = false;
+    }
+
+    private async Task PickFile()
+    {
+        try
+        {
+            var result = await FilePicker.Default.PickAsync(new PickOptions { PickerTitle = "選擇韌體 .bin" });
+            if (result is not null)
+            {
+                _file = result;
+                _fileName = result.FileName;
+                _status = "";
+                _error = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "選擇檔案失敗");
+            _status = $"選擇檔案失敗：{ex.Message}";
+            _error = true;
+        }
+    }
+
+    private async Task Upload()
+    {
+        if (_file is null) return;
+        _busy = true; _error = false; _progress = 0; _status = "上傳中...";
+
+        try
+        {
+            await using var stream = await _file.OpenReadAsync();
+            long len = stream.CanSeek ? stream.Length : 0;
+            var progress = new Progress<int>(p => { _progress = p; InvokeAsync(StateHasChanged); });
+            var ok = await Ota.UploadAsync(stream, len, _file.FileName, _host, progress);
+
+            _error = !ok;
+            _status = ok
+                ? "上傳完成，C6L 正在重開機套用新韌體。"
+                : "上傳失敗，請確認連線與檔案後重試。";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "OTA 上傳例外");
+            _error = true;
+            _status = $"上傳錯誤：{ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

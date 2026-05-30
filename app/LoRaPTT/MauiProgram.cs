@@ -34,6 +34,9 @@ public static class MauiProgram
         // ── 通訊錄/群組持久化（F-003 / F-020~022）────────────
         builder.Services.AddSingleton<RosterStore>();
 
+        // ── 韌體 OTA 上傳（F-060~064）────────────────────────
+        builder.Services.AddSingleton<OtaService>();
+
         // ── Codec2 編解碼 ────────────────────────────────────
         builder.Services.AddSingleton<Codec2Service>();
 

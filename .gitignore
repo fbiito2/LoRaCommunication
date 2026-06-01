@@ -20,5 +20,13 @@ app/libs/codec2/**/*.so
 Thumbs.db
 desktop.ini
 
-# Claude Code（本機設定不需同步）
+# Claude Code（本機設定與 worktree 不需同步）
 .claude/settings.local.json
+.claude/worktrees/
+
+# 大型二進位檔案（安裝檔、壓縮包等）
+*.exe
+*.msi
+*.zip
+*.tar.gz
+*.7z

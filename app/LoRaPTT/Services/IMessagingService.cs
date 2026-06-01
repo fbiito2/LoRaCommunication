@@ -31,6 +31,9 @@ public interface IMessagingService
     /// <summary>透過 PING 探測發現裝置</summary>
     event Action<Contact> DeviceDiscovered;
 
+    /// <summary>收到 SOS 緊急求救（F-073）。參數：發送者 ID、GPS + 附加 payload</summary>
+    event Action<ushort, byte[]> SosReceived;
+
     /// <summary>
     /// 送出文字訊息。
     /// 點對點（unicast）狀態為 Sending（待 ACK）；廣播/群組為 Sent（無 ACK）。
@@ -39,4 +42,8 @@ public interface IMessagingService
 
     /// <summary>送出廣播 PING 探測，附近裝置會回覆 ID + 暱稱</summary>
     Task SendPingAsync(CancellationToken ct = default);
+
+    /// <summary>發送 SOS 緊急求救（F-072），重複 3 次，HOP=15</summary>
+    Task SendSosAsync(double gpsLat = 0, double gpsLon = 0,
+        string? extraText = null, CancellationToken ct = default);
 }

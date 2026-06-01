@@ -286,9 +286,9 @@ C6L 內建 0.66" OLED（SSD1306, 64×48）和一顆使用者按鈕，韌體實�
 |------|------|------|
 | SRC_ID | 2 bytes | 原始發送者裝置 ID |
 | DST_ID | 2 bytes | 目標接收者 ID（0x0001~0xFFFE=點對點；0xFFFF=廣播；0xFFE0~0xFFEF=群組，最多 16 組） |
-| HOP | 1 byte | 剩餘跳數，每次中繼轉發減 1，歸 0 丟棄（預設 MAX_HOP = 3） |
+| HOP | 1 byte | 剩餘跳數，每次中繼轉發減 1，歸 0 丟棄（依類型：文字=5、SOS=15、語音=3） |
 | SEQ | 2 bytes | 遞增封包序號，作為 AES-CTR nonce 一部分，防重放 |
-| TYPE | 1 byte | 0x01=文字, 0x02=語音, 0x03=控制/心跳, 0x04=ACK, 0x05=PING/探測 |
+| TYPE | 1 byte | 0x01=文字, 0x02=語音, 0x03=控制/心跳, 0x04=ACK, 0x05=PING/探測, 0x06=SOS |
 | PAYLOAD | N bytes | AES-128-CTR 加密後的資料（文字或 Codec2 語音幀） |
 | MAC | 4 bytes | HMAC-SHA256 截斷，對整個封包（含明文區+加密區）計算 |
 

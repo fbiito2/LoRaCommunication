@@ -70,4 +70,25 @@ void loop() {
     }
 }
 
+void showSosSent() {
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.setCursor(0, 8);
+    M5.Display.setTextSize(2);
+    M5.Display.println("SOS");
+    M5.Display.setTextSize(1);
+    M5.Display.println("SENT!");
+    M5.Display.printf("ID:%04X\n", deviceId);
+    _lastMs = millis() + 3000; // 強制顯示 3 秒不被覆蓋
+}
+
+void showSosReceived(uint16_t fromId) {
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.setCursor(0, 0);
+    M5.Display.setTextSize(1);
+    M5.Display.println("!!! SOS !!!");
+    M5.Display.printf("FROM:%04X\n", fromId);
+    M5.Display.println("EMERGENCY!");
+    _lastMs = millis() + 5000; // 強制顯示 5 秒不被覆蓋
+}
+
 } // namespace Display

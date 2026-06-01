@@ -27,6 +27,7 @@ void setBaseWaiting() { _set(0x0000FF, true); }     // 藍色閃爍
 void setLoRaTx()      { _set(0xFF0000, true); }     // 紅色閃爍
 void setLoRaRx()      { _set(0xFFFF00, true); }     // 黃色閃爍
 void setError()       { _set(0xFF0000); }           // 紅色常亮
+void setSosAlert()    { _set(0xFF0000, true); }     // SOS 紅色快閃（F-073）
 void setOff()         { _set(0x000000); }
 
 void loop() {

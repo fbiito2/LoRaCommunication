@@ -41,7 +41,13 @@ bool LoRaHandler::sendPacket(LoRaPacket& pkt) {
     // 韌體只覆寫 SRC_ID / HOP / MAC；SEQ 由上層（APP）提供並擁有，
     // 以利 APP 做 ACK 關聯與去重。DST_ID / TYPE / PAYLOAD 亦保留 APP 設定值。
     pkt.srcId = _myId;
-    pkt.hop   = MAX_HOP;
+
+    // 依封包類型設定不同的 HOP 初始值
+    switch (pkt.type) {
+        case PKT_TYPE_SOS:   pkt.hop = MAX_HOP_SOS;   break;
+        case PKT_TYPE_VOICE: pkt.hop = MAX_HOP_VOICE;  break;
+        default:             pkt.hop = MAX_HOP_TEXT;    break;
+    }
 
     // 加密 payload（Phase 1 為直通不變更）
     payloadEncrypt(pkt.payload, pkt.payloadLen, pkt.srcId, pkt.seq);

@@ -13,4 +13,6 @@ public enum PacketType : byte
     Ack = 0x04,
     /// <summary>PING/探測（廣播發現裝置）</summary>
     Ping = 0x05,
+    /// <summary>SOS 緊急求救（F-070）</summary>
+    Sos = 0x06,
 }

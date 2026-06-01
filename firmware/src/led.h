@@ -11,6 +11,7 @@ namespace Led {
     void setLoRaTx();        // LoRa 發送中 → 紅色閃爍
     void setLoRaRx();        // LoRa 接收中 → 黃色閃爍
     void setError();         // 錯誤 → 紅色常亮
+    void setSosAlert();      // SOS 收到 → 紅色快閃（F-073）
     void setOff();
 
     void loop();             // 處理閃爍計時，在 main loop() 呼叫

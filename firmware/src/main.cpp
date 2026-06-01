@@ -55,12 +55,67 @@ static void broadcastToApps(const uint8_t* frame, size_t len) {
             _transports[i].comm->send(frame, len);
 }
 
+// ── SOS 發送（F-071：C6L 實體按鈕觸發，不需手機）─────────────
+static uint16_t _sosSeq = 0xF000; // SOS 專用 SEQ 區段，避免與 APP 的 SEQ 碰撞
+static void sendSos() {
+    Serial.println("[SOS] 緊急求救發送中！");
+    Display::showSosSent();
+    M5.Speaker.tone(1000, 1500); // 長嗶確認
+
+    for (int i = 0; i < 3; i++) { // 重複發送 3 次（F-070）
+        LoRaPacket pkt = {};
+        pkt.dstId      = DST_BROADCAST;
+        pkt.type       = PKT_TYPE_SOS;
+        pkt.seq        = _sosSeq++;
+        // Payload：簡易格式 [DeviceID 2B]（無手機 → 無 GPS）
+        pkt.payload[0] = (_cfg.deviceId >> 8) & 0xFF;
+        pkt.payload[1] = _cfg.deviceId & 0xFF;
+        pkt.payloadLen = 2;
+        Led::setLoRaTx();
+        loraHandler.sendPacket(pkt);
+        if (i < 2) delay(2000); // 間隔 2 秒
+    }
+    Led::setCarryMode();
+}
+
+// ── PING 回覆（F-004：廣播探測發現裝置）─────────────────────
+static void replyPing(const LoRaPacket& pingPkt) {
+    LoRaPacket reply = {};
+    reply.dstId      = pingPkt.srcId; // 回覆給發送 PING 的人
+    reply.type       = PKT_TYPE_PING;
+    reply.seq        = (uint16_t)(millis() & 0xFFFF);
+
+    // Payload：[DeviceID 2B][暱稱 UTF-8 NB]
+    reply.payload[0] = (_cfg.deviceId >> 8) & 0xFF;
+    reply.payload[1] = _cfg.deviceId & 0xFF;
+    size_t nameLen = strlen(_cfg.deviceName);
+    if (nameLen > PKT_MAX_PAYLOAD - 2) nameLen = PKT_MAX_PAYLOAD - 2;
+    memcpy(reply.payload + 2, _cfg.deviceName, nameLen);
+    reply.payloadLen = 2 + nameLen;
+
+    loraHandler.sendPacket(reply);
+    Serial.printf("[PING] 回覆給 0x%04X\n", pingPkt.srcId);
+}
+
 // ── 收到 LoRa 封包（給自己/廣播/群組，已解密）→ 推給手機 ────
 static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
     PowerMgr::onActivity();
     Led::setLoRaRx();
     Display::lastRssi = rssi;
     Display::rxCount++;
+
+    // F-073：收到 SOS → 全節點警報（不管有沒有接手機）
+    if (pkt.type == PKT_TYPE_SOS) {
+        Serial.printf("[SOS] 收到求救！來自 0x%04X\n", pkt.srcId);
+        M5.Speaker.tone(800, 3000); // Buzzer 連續長響 3 秒
+        Led::setSosAlert();          // RGB LED 紅色快閃
+        Display::showSosReceived(pkt.srcId);
+    }
+
+    // F-004：收到廣播 PING → 回覆自己的 ID + 暱稱（韌體自動回覆，不需 APP）
+    if (pkt.type == PKT_TYPE_PING && pkt.dstId == DST_BROADCAST) {
+        replyPing(pkt);
+    }
 
     // F-043：收到文字訊息短響一聲（語音幀過於頻繁，不蜂鳴）
     if (pkt.type == PKT_TYPE_TEXT) M5.Speaker.tone(2000, 80);
@@ -215,6 +270,10 @@ void setup() {
         Serial.println("[Main] 長按 6 秒：重置設定");
         configReset();
         M5.Speaker.tone(500, 500);
+    });
+    Button::onTriplePress([]() {
+        // F-071：連按 3 下 → SOS 緊急求救（不需手機也能發送）
+        sendSos();
     });
 
     Serial.println("=== 橋接就緒（USB + WiFi 雙傳輸層）===");

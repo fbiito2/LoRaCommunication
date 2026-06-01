@@ -11,4 +11,5 @@ namespace Button {
     void onShortPress(VoidCb cb);    // 短按：切換 OLED 頁面
     void onLongPress(VoidCb cb);     // 長按 3 秒：開/關 WiFi AP
     void onVeryLongPress(VoidCb cb); // 長按 6 秒：重置設定
+    void onTriplePress(VoidCb cb);   // 連按 3 下（1 秒內）：SOS 求救（F-071）
 }

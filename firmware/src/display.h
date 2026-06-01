@@ -8,6 +8,8 @@ namespace Display {
     void init();
     void nextPage();     // 短按按鈕切換
     void loop();         // 定期更新顯示內容，在 main loop() 呼叫
+    void showSosSent();              // SOS 發送確認畫面（F-071）
+    void showSosReceived(uint16_t fromId); // 收到 SOS 警報畫面（F-073）
 
     // 狀態資料（由各模組更新）
     extern uint16_t deviceId;     // 本機 Device ID（F-001）

@@ -28,9 +28,17 @@ static inline bool dstIsGroup(uint16_t dst) {
 #define PKT_TYPE_CTRL   0x03  // 控制/心跳
 #define PKT_TYPE_ACK    0x04  // ACK 確認（點對點）
 #define PKT_TYPE_PING   0x05  // PING/探測（廣播發現裝置）
+#define PKT_TYPE_SOS    0x06  // SOS 緊急求救
 
-// 最大跳數（HOP 初始值）
-#define MAX_HOP         3
+// 各類型封包的 HOP 初始值
+#define MAX_HOP_TEXT    5     // 一般文字/群組/廣播
+#define MAX_HOP_ACK     5     // ACK 確認
+#define MAX_HOP_PING    5     // PING 探測
+#define MAX_HOP_VOICE   3     // 語音（連續封包量大，避免壅塞）
+#define MAX_HOP_SOS     15    // SOS 緊急求救（盡可能傳遠）
+
+// 向後相容：舊程式碼用 MAX_HOP 的地方等同文字預設值
+#define MAX_HOP         MAX_HOP_TEXT
 
 /// @brief LoRa 封包結構
 struct LoRaPacket {

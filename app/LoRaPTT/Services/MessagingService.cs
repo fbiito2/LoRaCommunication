@@ -32,6 +32,8 @@ public sealed class MessagingService : IMessagingService
     public event Action<ChatMessage>? MessageReceived;
     public event Action<ushort, ushort>? AckReceived;
     public event Action<Contact>? DeviceDiscovered;
+    /// <summary>收到 SOS 緊急求救（F-073）。參數：發送者 ID、GPS payload（可能為空）</summary>
+    public event Action<ushort, byte[]>? SosReceived;
 
     public MessagingService(ICommService comm, ILogger<MessagingService> logger)
     {
@@ -147,6 +149,7 @@ public sealed class MessagingService : IMessagingService
             case PacketType.Text: HandleText(pkt, rssi); break;
             case PacketType.Ack: HandleAck(pkt); break;
             case PacketType.Ping: HandlePing(pkt); break;
+            case PacketType.Sos: HandleSos(pkt); break;
             case PacketType.Voice:   // 語音另由 PTT 路徑處理
             case PacketType.Control:
             default:
@@ -231,35 +234,87 @@ public sealed class MessagingService : IMessagingService
 
     private void HandlePing(LoRaPacket pkt)
     {
+        // 韌體已自動回覆廣播 PING（F-004），APP 只處理收到的回覆
         if (DstId.IsBroadcast(pkt.DstId))
         {
-            // 收到他人的 PING 請求 → 回覆本機暱稱給請求者
-            _ = SendPingReplyAsync(pkt.SrcId);
+            // 廣播 PING 請求 → 韌體處理回覆，APP 不重複回覆
+            _logger.LogDebug("收到廣播 PING（韌體已自動回覆）");
+            return;
+        }
+
+        // 針對我們 PING 的回覆 → payload 含 [DeviceID 2B][暱稱]
+        ushort discoveredId = pkt.SrcId;
+        string name = "";
+        if (pkt.Payload.Length >= 2)
+        {
+            discoveredId = (ushort)((pkt.Payload[0] << 8) | pkt.Payload[1]);
+            if (pkt.Payload.Length > 2)
+                name = Encoding.UTF8.GetString(pkt.Payload, 2, pkt.Payload.Length - 2);
         }
         else
         {
-            // 針對我們 PING 的回覆 → payload 為對方暱稱，發現裝置
-            var contact = new Contact
-            {
-                DeviceId = pkt.SrcId,
-                Name = pkt.PayloadAsText(),
-                LastSeen = DateTimeOffset.Now,
-                Discovered = true,
-            };
-            DeviceDiscovered?.Invoke(contact);
+            name = pkt.PayloadAsText();
         }
+
+        var contact = new Contact
+        {
+            DeviceId = discoveredId,
+            Name = string.IsNullOrEmpty(name) ? $"Device_{discoveredId:X4}" : name,
+            LastSeen = DateTimeOffset.Now,
+            Discovered = true,
+        };
+        DeviceDiscovered?.Invoke(contact);
     }
 
-    private async Task SendPingReplyAsync(ushort dst)
+    // ── SOS 緊急求救（F-070~073）────────────────────────────
+    private void HandleSos(LoRaPacket pkt)
     {
-        var pkt = new LoRaPacket
+        _logger.LogWarning("!!! 收到 SOS 緊急求救！來自 0x{Src:X4}", pkt.SrcId);
+        SosReceived?.Invoke(pkt.SrcId, pkt.Payload);
+    }
+
+    /// <summary>
+    /// 發送 SOS 緊急求救（F-072 APP 觸發）。
+    /// 重複發送 3 次，間隔 2 秒，HOP=15。
+    /// </summary>
+    /// <param name="gpsLat">GPS 緯度（手機定位，無則傳 0）</param>
+    /// <param name="gpsLon">GPS 經度</param>
+    /// <param name="extraText">附加文字（可選）</param>
+    public async Task SendSosAsync(double gpsLat = 0, double gpsLon = 0,
+        string? extraText = null, CancellationToken ct = default)
+    {
+        // Payload：[DeviceID 2B][Lat 8B double][Lon 8B double][文字 NB]
+        using var ms = new MemoryStream();
+        var id = LocalDeviceId ?? 0;
+        ms.WriteByte((byte)(id >> 8));
+        ms.WriteByte((byte)(id & 0xFF));
+        ms.Write(BitConverter.GetBytes(gpsLat));
+        ms.Write(BitConverter.GetBytes(gpsLon));
+        if (!string.IsNullOrEmpty(extraText))
         {
-            DstId = dst,
-            Seq = NextSeq(),
-            Type = PacketType.Ping,
-            Payload = Encoding.UTF8.GetBytes(LocalNickname),
-        };
-        try { await _comm.SendAsync(LinkFrame.WrapData(PacketCodec.Serialize(pkt))); }
-        catch (Exception ex) { _logger.LogError(ex, "回覆 PING 失敗 DST=0x{Dst:X4}", dst); }
+            var textBytes = Encoding.UTF8.GetBytes(extraText);
+            ms.Write(textBytes, 0, Math.Min(textBytes.Length, 200));
+        }
+
+        for (int i = 0; i < 3; i++) // 重複 3 次
+        {
+            var pkt = new LoRaPacket
+            {
+                DstId = DstId.Broadcast,
+                Seq = NextSeq(),
+                Type = PacketType.Sos,
+                Payload = ms.ToArray(),
+            };
+            try
+            {
+                await _comm.SendAsync(LinkFrame.WrapData(PacketCodec.Serialize(pkt)), ct);
+                _logger.LogWarning("SOS 發送第 {N}/3 次", i + 1);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SOS 發送失敗");
+            }
+            if (i < 2) await Task.Delay(2000, ct); // 間隔 2 秒
+        }
     }
 }

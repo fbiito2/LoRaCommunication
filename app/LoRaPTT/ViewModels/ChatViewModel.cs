@@ -33,6 +33,8 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string _newContactId = "";
     [ObservableProperty] private string _newContactName = "";
     [ObservableProperty] private string _newGroupName = "";
+    [ObservableProperty] private bool _isScanning;             // F-004：正在掃描附近裝置
+    [ObservableProperty] private int _scanCountdown;           // 掃描倒數秒
 
     /// <summary>目前草稿的 UTF-8 位元組數（F-013）</summary>
     public int DraftByteCount => Encoding.UTF8.GetByteCount(DraftText ?? "");
@@ -120,21 +122,39 @@ public partial class ChatViewModel : ObservableObject
         Notify();
     }
 
-    // ── 廣播 PING 探測 ──────────────────────────────────────
+    // ── 廣播 PING 探測（F-004 增強版）─────────────────────
     [RelayCommand]
     private async Task PingAsync()
     {
         if (!IsConnected) { StatusMessage = "尚未連線"; Notify(); return; }
         try
         {
+            IsScanning = true;
+            ScanCountdown = 5;
+            Notify();
+
             await _messaging.SendPingAsync();
-            StatusMessage = "已送出探測，等待附近裝置回覆...";
+            StatusMessage = "正在搜尋附近裝置...";
+            Notify();
+
+            // 倒數 5 秒等待回覆
+            for (int i = 5; i > 0; i--)
+            {
+                ScanCountdown = i;
+                Notify();
+                await Task.Delay(1000);
+            }
+
+            ScanCountdown = 0;
+            IsScanning = false;
+            StatusMessage = "探測完成";
             Notify();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "PING 探測失敗");
             StatusMessage = $"探測失敗：{ex.Message}";
+            IsScanning = false;
             Notify();
         }
     }

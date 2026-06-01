@@ -1,8 +1,8 @@
 # LoRa PTT 通訊系統 — 產品規格書
 
-> 版本：1.1  
-> 日期：2026-05-30  
-> 狀態：需求已確認（雙傳輸層模型、F-053 握手、F-060~064 OTA）
+> 版本：1.2  
+> 日期：2026-06-01  
+> 狀態：Phase 3 開發中（F-004 探測 UI、F-051 設定頁、F-063 OTA rollback、F-070~073 SOS 已完成）
 
 ---
 
@@ -163,7 +163,7 @@ C6L 提供兩種傳輸層，**可同時啟用**，上層封包格式完全一致
 | **F-060** OTA 推送 | APP 把韌體 `.bin` 推送到 C6L；走 **WiFi HTTP（TCP，port 80，`POST /update`）** 確保可靠（UDP 不適合韌體影像）；不走 LoRa（影像過大） |
 | **F-061** 雙分割區更新 | 以 `Update.h` 寫入非作用中的 OTA 分割區（app0/app1），校驗通過後切換開機分割區並重開機 |
 | **F-062** 進度顯示 | OLED 顯示更新進度 %（上傳期間直接繪製進度條）；寫入/校驗失敗則中止並保留舊韌體 |
-| **F-063** 失敗回滾 | 新韌體開機未通過自檢 → 回退舊版。註：完整 rollback 需 bootloader `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`（Arduino 預設未開，列為後續 sdkconfig 工項） |
+| **F-063** 失敗回滾 | 新韌體開機未通過自檢 → 回退舊版。已啟用 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`（sdkconfig.defaults），韌體 setup() 呼叫 `esp_ota_mark_app_valid_cancel_rollback()` 標記有效 |
 | **F-064** 版本查詢 | APP 可讀取 C6L 韌體版本（握手 hello-ack 的 `fw_ver`，或 `GET /version`） |
 
 > **手機 APP 本身的更新**走平台正常管道（Android APK/Play、iOS TestFlight/App Store），不由 C6L 負責。

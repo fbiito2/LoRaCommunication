@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <esp_ota_ops.h>  // F-063：OTA rollback 支援
 #include "config.h"
 #include "crypto.h"
 #include "comm_interface.h"
@@ -14,7 +15,7 @@
 #include "ota_service.h"
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.3.0"
+#define FW_VERSION "0.4.0"
 
 // ── 線路幀類型（手機 ↔ C6L，USB/WiFi 共用）─────────────────
 // 傳輸層各自負責邊界（USB 2-byte 長度前綴 / WiFi 一個 datagram）。
@@ -275,6 +276,18 @@ void setup() {
         // F-071：連按 3 下 → SOS 緊急求救（不需手機也能發送）
         sendSos();
     });
+
+    // F-063：OTA 回滾驗證 ─────────────────────────────────────
+    // 若此韌體是 OTA 更新後首次啟動（pending verify），
+    // 標記為有效；否則下次重開機會自動回滾到前一版本。
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
+        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+            Serial.println("[OTA] 新韌體首次開機，驗證通過 → 標記有效");
+            esp_ota_mark_app_valid_cancel_rollback();
+        }
+    }
 
     Serial.println("=== 橋接就緒（USB + WiFi 雙傳輸層）===");
 }

@@ -51,6 +51,8 @@ public static class MauiProgram
 
         builder.Services.AddTransient<MainViewModel>();
         builder.Services.AddSingleton<ViewModels.ChatViewModel>();
+        builder.Services.AddSingleton<ViewModels.SettingsViewModel>();
+        builder.Services.AddSingleton<ViewModels.SosViewModel>();
 
         return builder.Build();
     }

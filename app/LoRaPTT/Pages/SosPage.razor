@@ -1,0 +1,174 @@
+@page "/sos"
+@using LoRaPTT.ViewModels
+@inject SosViewModel VM
+@implements IDisposable
+
+<div class="d-flex flex-column vh-100 bg-dark text-white">
+
+    <!-- 標題列 -->
+    <div class="p-2 border-bottom border-secondary d-flex align-items-center gap-2">
+        <h5 class="mb-0 text-danger">SOS 緊急求救</h5>
+        <span class="badge @(VM.IsConnected ? "bg-success" : "bg-secondary") ms-auto">
+            @(VM.IsConnected ? "● 已連線" : "○ 未連線")
+        </span>
+    </div>
+
+    <!-- GPS 與附加訊息 -->
+    <div class="p-3">
+        <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="small text-muted">GPS</span>
+            <span class="small">@VM.GpsStatus</span>
+            <button class="btn btn-sm btn-outline-info ms-auto" @onclick="RefreshGps">重新定位</button>
+        </div>
+        <div class="mb-3">
+            <input class="form-control form-control-sm bg-dark text-white border-secondary"
+                   @bind="VM.ExtraText" placeholder="附加訊息（選填，如：受傷需救援）" />
+        </div>
+    </div>
+
+    <!-- SOS 大圓按鈕（長按 3 秒觸發）-->
+    <div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+        <div class="position-relative">
+            <!-- 進度環 -->
+            <svg width="220" height="220" class="position-absolute" style="top:-10px;left:-10px;">
+                <circle cx="110" cy="110" r="100" fill="none" stroke="#333" stroke-width="6" />
+                <circle cx="110" cy="110" r="100" fill="none"
+                        stroke="@(VM.IsSending ? "#198754" : "#dc3545")"
+                        stroke-width="6"
+                        stroke-dasharray="@(2 * Math.PI * 100)"
+                        stroke-dashoffset="@(2 * Math.PI * 100 * (1 - VM.HoldProgress / 100.0))"
+                        stroke-linecap="round"
+                        transform="rotate(-90 110 110)"
+                        style="transition: stroke-dashoffset 0.1s linear;" />
+            </svg>
+
+            <button class="btn-sos rounded-circle @(VM.IsSending ? "sending" : "") @(VM.IsHolding ? "holding" : "")"
+                    @onmousedown="OnHoldStart"
+                    @onmouseup="OnHoldEnd"
+                    @onmouseleave="OnHoldEnd"
+                    @ontouchstart:preventDefault="true"
+                    @ontouchstart="OnHoldStart"
+                    @ontouchend="OnHoldEnd"
+                    disabled="@(!VM.IsConnected || VM.IsSending)">
+                <span class="sos-icon">🆘</span>
+                <span class="sos-label">
+                    @if (VM.IsSending) { <text>發送中...</text> }
+                    else if (VM.IsHolding) { <text>長按 @(SosViewModel.RequiredHoldSeconds) 秒...</text> }
+                    else { <text>長按 @(SosViewModel.RequiredHoldSeconds) 秒發送</text> }
+                </span>
+            </button>
+        </div>
+
+        <p class="text-muted small mt-3 text-center px-3">
+            長按按鈕 @(SosViewModel.RequiredHoldSeconds) 秒觸發 SOS 求救。<br />
+            將以最大跳數（HOP=15）廣播 3 次，所有節點皆可收到。
+        </p>
+    </div>
+
+    <!-- 狀態訊息 -->
+    @if (!string.IsNullOrEmpty(VM.StatusMessage))
+    {
+        <div class="px-3 pb-2">
+            <div class="alert @(VM.StatusMessage.Contains("失敗") ? "alert-danger" : VM.StatusMessage.Contains("SOS") ? "alert-warning" : "alert-info") py-1 small mb-0">
+                @VM.StatusMessage
+            </div>
+        </div>
+    }
+
+    <!-- 收到的 SOS 警報列表（F-073）-->
+    @if (VM.Alerts.Count > 0)
+    {
+        <div class="border-top border-danger px-3 py-2" style="max-height:35vh; overflow-auto;">
+            <div class="d-flex align-items-center mb-2">
+                <span class="text-danger fw-bold small">收到的求救訊號（@VM.Alerts.Count 則）</span>
+                <button class="btn btn-sm btn-outline-secondary ms-auto py-0" @onclick="ClearAlerts">清除</button>
+            </div>
+            @foreach (var a in VM.Alerts)
+            {
+                <div class="card bg-danger bg-opacity-10 border-danger mb-2">
+                    <div class="card-body py-2 px-3 small">
+                        <div class="d-flex justify-content-between">
+                            <span class="fw-bold text-danger">SOS 來自 0x@a.FromIdHex</span>
+                            <span class="text-muted">@a.ReceivedAt.ToString("HH:mm:ss")</span>
+                        </div>
+                        @if (a.HasGps)
+                        {
+                            <div class="text-info">
+                                GPS: @a.Lat.ToString("F6"), @a.Lon.ToString("F6")
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(a.ExtraText))
+                        {
+                            <div class="text-white-50">@a.ExtraText</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .btn-sos {
+        width: 200px;
+        height: 200px;
+        background: #dc3545;
+        border: 4px solid #a71d2a;
+        color: white;
+        font-size: 1rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.1s, background 0.15s;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: pointer;
+        box-shadow: 0 6px 20px rgba(220,53,69,0.5);
+        z-index: 1;
+        position: relative;
+    }
+    .btn-sos.holding {
+        background: #b02a37;
+        transform: scale(0.95);
+        box-shadow: 0 3px 10px rgba(220,53,69,0.6);
+    }
+    .btn-sos.sending {
+        background: #198754;
+        border-color: #146c43;
+        box-shadow: 0 6px 20px rgba(25,135,84,0.4);
+        cursor: wait;
+    }
+    .btn-sos:disabled {
+        background: #495057;
+        border-color: #343a40;
+        box-shadow: none;
+        cursor: not-allowed;
+    }
+    .sos-icon  { font-size: 3rem; }
+    .sos-label { font-size: 0.8rem; margin-top: 6px; letter-spacing: 0.05em; }
+</style>
+
+@code {
+    protected override void OnInitialized()
+    {
+        VM.StateChanged += OnVmChanged;
+        // 進入頁面自動嘗試取得 GPS
+        _ = RefreshGps();
+    }
+
+    private async void OnVmChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnHoldStart() => await VM.HoldStartCommand.ExecuteAsync(null);
+    private void OnHoldEnd() => VM.HoldEndCommand.Execute(null);
+    private async Task RefreshGps() => await VM.RefreshGpsCommand.ExecuteAsync(null);
+    private void ClearAlerts() => VM.ClearAlertsCommand.Execute(null);
+
+    public void Dispose()
+    {
+        VM.StateChanged -= OnVmChanged;
+    }
+}

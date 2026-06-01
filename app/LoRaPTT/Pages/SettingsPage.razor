@@ -1,0 +1,102 @@
+@page "/settings"
+@using LoRaPTT.ViewModels
+@inject SettingsViewModel VM
+@implements IDisposable
+
+<div class="d-flex flex-column vh-100 bg-dark text-white p-3">
+    <h5>裝置設定</h5>
+
+    <!-- 連線狀態 -->
+    <div class="mb-3 d-flex align-items-center gap-2">
+        <span class="badge @(VM.IsConnected ? "bg-success" : "bg-secondary")">
+            @(VM.IsConnected ? "● 已連線" : "○ 未連線")
+        </span>
+        @if (!VM.IsConnected)
+        {
+            <button class="btn btn-sm btn-outline-light" @onclick="Connect">連接裝置</button>
+        }
+        <small class="text-muted">@VM.StatusMessage</small>
+    </div>
+
+    <!-- 裝置資訊（唯讀）-->
+    <div class="card bg-secondary bg-opacity-25 border-secondary mb-3">
+        <div class="card-body py-2">
+            <div class="row small">
+                <div class="col-6">
+                    <span class="text-muted">裝置 ID</span>
+                    <div class="fw-bold">0x@VM.DeviceIdHex</div>
+                </div>
+                <div class="col-6">
+                    <span class="text-muted">韌體版本</span>
+                    <div class="fw-bold">@VM.FirmwareVersion</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 暱稱 -->
+    <div class="mb-3">
+        <label class="form-label small text-muted">本機暱稱（APP 端顯示 & PING 回覆帶出）</label>
+        <div class="d-flex gap-2">
+            <input class="form-control form-control-sm bg-dark text-white border-secondary"
+                   @bind="VM.Nickname" placeholder="如：登山隊長" />
+            <button class="btn btn-sm btn-outline-success" @onclick="SaveNickname">儲存</button>
+        </div>
+    </div>
+
+    <hr class="border-secondary" />
+    <h6 class="text-info">C6L 裝置設定（推送到韌體 NVS）</h6>
+    <p class="text-muted small">以下設定會透過 USB/WiFi 傳送到 C6L，儲存在 NVS 中，下次開機生效。</p>
+
+    <!-- WiFi AP SSID -->
+    <div class="mb-3">
+        <label class="form-label small text-muted">WiFi AP SSID</label>
+        <input class="form-control form-control-sm bg-dark text-white border-secondary"
+               @bind="VM.WifiSsid" placeholder="LoRaPTT_A01B" />
+    </div>
+
+    <!-- WiFi AP 密碼 -->
+    <div class="mb-3">
+        <label class="form-label small text-muted">WiFi AP 密碼</label>
+        <input type="password" class="form-control form-control-sm bg-dark text-white border-secondary"
+               @bind="VM.WifiPassword" placeholder="loraptt2026" />
+    </div>
+
+    <!-- LoRa 頻率 -->
+    <div class="mb-3">
+        <label class="form-label small text-muted">LoRa 頻率（MHz，台灣 ISM：920~925）</label>
+        <input class="form-control form-control-sm bg-dark text-white border-secondary"
+               @bind="VM.LoraFreqMhz" placeholder="920.0" />
+    </div>
+
+    <!-- 推送按鈕 -->
+    <button class="btn btn-primary mb-3" @onclick="Apply"
+            disabled="@(!VM.IsConnected || VM.IsBusy)">
+        @(VM.IsBusy ? "推送中..." : "套用到 C6L")
+    </button>
+
+    <p class="text-muted small mt-auto">
+        裝置 ID 為出廠燒錄，無法在此修改。如需重置所有設定，請在 C6L 長按按鈕 6 秒。
+    </p>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        VM.StateChanged += OnVmChanged;
+    }
+
+    private async void OnVmChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Connect() => await VM.ConnectCommand.ExecuteAsync(null);
+    private void SaveNickname() => VM.SaveNicknameCommand.Execute(null);
+    private async Task Apply() => await VM.ApplyToDeviceCommand.ExecuteAsync(null);
+
+    public void Dispose()
+    {
+        VM.StateChanged -= OnVmChanged;
+    }
+}

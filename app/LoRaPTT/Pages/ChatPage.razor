@@ -16,7 +16,18 @@
         {
             <button class="btn btn-sm btn-outline-light" @onclick="Connect">連接</button>
         }
-        <button class="btn btn-sm btn-outline-info" @onclick="Ping" disabled="@(!VM.IsConnected)">探測</button>
+        <button class="btn btn-sm btn-outline-info" @onclick="Ping"
+                disabled="@(!VM.IsConnected || VM.IsScanning)">
+            @if (VM.IsScanning)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                <text>搜尋中(@(VM.ScanCountdown)s)</text>
+            }
+            else
+            {
+                <text>搜尋裝置</text>
+            }
+        </button>
     </div>
 
     <!-- 目標與暱稱設定 -->
@@ -76,7 +87,21 @@
             @foreach (var c in VM.Contacts)
             {
                 <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="flex-grow-1 text-truncate">@c.DisplayName <span class="text-muted">(@c.IdHex)</span></span>
+                    <span class="flex-grow-1 text-truncate">
+                        @c.DisplayName <span class="text-muted">(@c.IdHex)</span>
+                        @if (c.Discovered)
+                        {
+                            <span class="badge bg-info bg-opacity-25 ms-1" style="font-size:0.65rem">探測發現</span>
+                        }
+                        @if (c.LastRssi.HasValue)
+                        {
+                            <span class="text-white-50 ms-1" style="font-size:0.65rem">@(c.LastRssi)dBm</span>
+                        }
+                        @if (c.LastSeen.HasValue)
+                        {
+                            <span class="text-white-50 ms-1" style="font-size:0.65rem">@FormatLastSeen(c.LastSeen.Value)</span>
+                        }
+                    </span>
                     <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => VM.SelectTargetCommand.Execute(c.IdHex)">選為目標</button>
                 </div>
             }
@@ -201,6 +226,16 @@
         MessageStatus.Failed    => "⚠",
         _ => "",
     };
+
+    /// <summary>將 LastSeen 格式化為「X 分鐘前」等友善文字</summary>
+    private static string FormatLastSeen(DateTimeOffset lastSeen)
+    {
+        var ago = DateTimeOffset.Now - lastSeen;
+        if (ago.TotalSeconds < 60) return "剛剛";
+        if (ago.TotalMinutes < 60) return $"{(int)ago.TotalMinutes}分前";
+        if (ago.TotalHours < 24) return $"{(int)ago.TotalHours}時前";
+        return lastSeen.ToString("MM/dd");
+    }
 
     public void Dispose()
     {

@@ -1,0 +1,11 @@
+# LoRaPTT 韌體 SDK 設定
+# F-063：啟用 OTA 回滾支援
+# 若新韌體未在首次開機時呼叫 esp_ota_mark_app_valid_cancel_rollback()，
+# 則下次重開機會自動回滾到前一版本。
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# OTA 需要足夠的 partition table 空間（已在 platformio.ini 指定 default_16MB.csv）
+# default_16MB.csv 內含 app0 + app1 雙 OTA 分割區
+
+# USB CDC 啟用
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

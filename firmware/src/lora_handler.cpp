@@ -34,6 +34,7 @@ static void expWrite(uint8_t reg, uint8_t val) {
 
 // 初始化擴充晶片並釋放/重置 SX1262（P7）、開 RF 開關（P6）
 static bool initExpanderAndResetRadio() {
+    Wire.end(); // M5.begin 可能已佔用 Wire，先釋放再以正確腳位重啟
     Wire.begin(EXP_I2C_SDA, EXP_I2C_SCL);
     Wire.beginTransmission(EXP_ADDR);
     if (Wire.endTransmission() != 0) {

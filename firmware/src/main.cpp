@@ -219,6 +219,7 @@ void setup() {
 
     // ── I2C 掃描（實機除錯：找 PI4IOE5V6408 擴充晶片）──────────
     {
+        Wire.end();        // M5.begin 可能已佔用 Wire，先釋放再以正確腳位重啟
         Wire.begin(10, 8); // 預期 SDA=10, SCL=8
         String found = "";
         for (uint8_t a = 1; a < 127; a++) {

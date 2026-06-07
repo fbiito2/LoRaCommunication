@@ -796,4 +796,4 @@ app/
 - **Windows 防火牆擋回傳 UDP**，PC 端診斷請用 HTTP/TCP；手機連 WiFi 不受影響
 - 多機測試：softAP 同網段 192.168.4.x，PC 雙網卡會路由衝突 → 用手機或裝置自身 OLED 觀測
 - 保留畫面（SOS 警示）勿用無號數 `now-(millis()+N)`（會下溢），用 `(int32_t)(holdUntil-now)>0`
-- 雙機 LoRa 收發 + SOS 已實機驗證通過（RSSI -27、Rx 累加）；部分 Unit 的 OLED 可能不亮（硬體差異）
+- 雙機 LoRa 收發 + SOS 已實機驗證通過（RSSI -27、Rx 累加）；兩台 OLED 皆正常（OLED 偶發開機不亮為暫態，重上電/重燒可恢復，非硬體缺陷）

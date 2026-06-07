@@ -17,6 +17,7 @@ uint32_t relayCount = 0;
 static Page      _page    = Page::STATUS;
 static uint32_t  _lastMs  = 0;
 static const uint32_t UPDATE_MS = 1000; // 每秒更新顯示
+static uint32_t  _holdUntil = 0;        // 警示畫面（SOS）強制保留到此時間點
 
 void init() {
     // M5Unified 已在 M5.begin() 初始化 OLED
@@ -34,6 +35,7 @@ void nextPage() {
 
 void loop() {
     uint32_t now = millis();
+    if ((int32_t)(_holdUntil - now) > 0) return; // 警示畫面保留中，暫停一般頁面重畫
     if (now - _lastMs < UPDATE_MS) return;
     _lastMs = now;
 
@@ -78,7 +80,7 @@ void showSosSent() {
     M5.Display.setTextSize(1);
     M5.Display.println("SENT!");
     M5.Display.printf("ID:%04X\n", deviceId);
-    _lastMs = millis() + 3000; // 強制顯示 3 秒不被覆蓋
+    _holdUntil = millis() + 3000; // 強制顯示 3 秒不被覆蓋
 }
 
 void showSosReceived(uint16_t fromId) {
@@ -88,7 +90,7 @@ void showSosReceived(uint16_t fromId) {
     M5.Display.println("!!! SOS !!!");
     M5.Display.printf("FROM:%04X\n", fromId);
     M5.Display.println("EMERGENCY!");
-    _lastMs = millis() + 5000; // 強制顯示 5 秒不被覆蓋
+    _holdUntil = millis() + 5000; // 強制顯示 5 秒不被覆蓋（接收端 SOS 警示）
 }
 
 } // namespace Display

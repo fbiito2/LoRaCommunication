@@ -18,7 +18,7 @@ DeviceConfig configLoad() {
     Preferences prefs;
     prefs.begin(NVS_NS, true); // 唯讀
 
-    DeviceConfig cfg;
+    DeviceConfig cfg{}; // 值初始化為全零，避免 NVS 無 key 時讀到未初始化的垃圾值（如 0xA5）
     cfg.deviceId = prefs.getUShort("deviceId", 0xA001);
     prefs.getString("name",      cfg.deviceName, sizeof(cfg.deviceName));
     prefs.getString("wifiSsid",  cfg.wifiSsid,   sizeof(cfg.wifiSsid));

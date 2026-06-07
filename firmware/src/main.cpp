@@ -32,6 +32,7 @@ struct Transport {
 static Transport _transports[2];
 static int       _transportCount = 0;
 static DeviceConfig _cfg;
+static bool      _loraOk = false; // LoRa 初始化結果（心跳輸出用）
 
 static bool anyAppConnected() {
     for (int i = 0; i < _transportCount; i++)
@@ -200,8 +201,13 @@ static void onLinkReceived(int idx, const uint8_t* data, size_t len) {
 }
 
 void setup() {
+    // Serial 先起，並加長延遲等待 USB CDC 列舉 + host 連線，確保檢查點不被丟棄
     Serial.begin(115200);
-    delay(500);
+    delay(2000);
+    // M5Unified 初始化（電源/I2C/OLED/按鈕/蜂鳴器）——須在使用 M5.* 前呼叫
+    auto m5cfg = M5.config();
+    M5.begin(m5cfg);
+
     Serial.println("=== LoRa PTT Bridge 啟動 ===");
 
     _cfg = configLoad();
@@ -241,8 +247,9 @@ void setup() {
     Display::wifiSsid   = WiFi.softAPSSID();
     Display::wifiIp     = WiFi.softAPIP().toString();
 
-    // LoRa
-    loraHandler.begin(_cfg.deviceId);
+    // LoRa（記錄初始化結果，供心跳輸出判斷腳位是否正確）
+    _loraOk = loraHandler.begin(_cfg.deviceId);
+    Serial.printf("[Main] LoRa 初始化 %s\n", _loraOk ? "成功" : "失敗");
     loraHandler.setPacketCallback(onLoRaReceived);
 
     // Relay：轉發用 sendRaw 原樣送出，保留原始 SRC/SEQ/MAC（去重依據）
@@ -307,6 +314,18 @@ void loop() {
     Display::loop();
     Button::loop();
     Led::loop();
+
+    // ── 心跳輸出（每 2 秒）：實機監看用，原生 USB 重置後仍能持續觀察 ──
+    static uint32_t _hbMs = 0;
+    if (millis() - _hbMs >= 2000) {
+        _hbMs = millis();
+        Serial.printf("[HB] up=%lus id=0x%04X fw=%s loraOk=%d apIP=%s app=USB%d/WiFi%d rx=%lu tx=%lu fwd=%lu\n",
+                      (unsigned long)(millis() / 1000), _cfg.deviceId, FW_VERSION, _loraOk ? 1 : 0,
+                      WiFi.softAPIP().toString().c_str(),
+                      _transports[0].hasApp ? 1 : 0, _transports[1].hasApp ? 1 : 0,
+                      (unsigned long)Display::rxCount, (unsigned long)Display::txCount,
+                      (unsigned long)relayHandler.forwardCount());
+    }
 
     delay(1);
 }

@@ -777,3 +777,23 @@ app/
 - USB host 接上不代表有 APP（可能只供電）；需靠 F-053 握手區分資料端與純供電
 - 兩傳輸層（USB+WiFi）可同時橋接，無「使用模式」切換；中繼能力恆開
 - 韌體 OTA（F-060~064）走 USB/WiFi 推送，需雙 app 分割區的 partition table
+
+## 實機 bring-up 注意事項（Unit C6L 踩雷紀錄，完整見 docs/SPEC.md §11）
+
+**初始化順序（否則整機不動）：**
+- **必先呼叫 `M5.begin()`** 才能用 `M5.Display/BtnA/Speaker`，否則開機即當機
+- `DeviceConfig` 要值初始化 `cfg{}`，否則新機 NVS 空時讀到 0xA5 垃圾（SSID 曾變 `A5A5...`）
+
+**LoRa / I2C（否則 LoRa 不通）：**
+- SX1262 **RESET 在 I2C 擴充晶片 PI4IOE5V6408（0x43, SDA=10/SCL=8）的 P7**，須先初始化擴充晶片拉高 P7 釋放 reset，否則 `radio.begin()` 卡死整個 loop
+- **`M5.begin()` 會佔用 Wire**，存取擴充晶片要先 `Wire.end()` 再 `Wire.begin(10,8)` 強制切腳位
+- `radio.begin` 必須指定 **TCXO DIO3 = 3.0V**；RF 開關用 `setDio2AsRfSwitch(true)`
+- SX1262 腳位：SCK20/MISO22/MOSI21/NSS23/DIO1=7/BUSY19/RESET=NC
+- **Device ID 用 MAC NIC 後兩碼**（`esp_read_mac` 的 mac[4],[5]），**勿用 `getEfuseMac()&0xFFFF`**（OUI 前綴會全機撞號）
+
+**實機觀測 / 測試：**
+- 原生 USB(HWCDC) serial 重置後 host 會斷線、難穩定讀 log → **改用 WiFi `GET /version`（TCP）遙測**或 loop 心跳
+- **Windows 防火牆擋回傳 UDP**，PC 端診斷請用 HTTP/TCP；手機連 WiFi 不受影響
+- 多機測試：softAP 同網段 192.168.4.x，PC 雙網卡會路由衝突 → 用手機或裝置自身 OLED 觀測
+- 保留畫面（SOS 警示）勿用無號數 `now-(millis()+N)`（會下溢），用 `(int32_t)(holdUntil-now)>0`
+- 雙機 LoRa 收發 + SOS 已實機驗證通過（RSSI -27、Rx 累加）；部分 Unit 的 OLED 可能不亮（硬體差異）

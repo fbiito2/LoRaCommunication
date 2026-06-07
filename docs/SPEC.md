@@ -1,8 +1,8 @@
 # LoRa PTT 通訊系統 — 產品規格書
 
-> 版本：1.2  
-> 日期：2026-06-01  
-> 狀態：Phase 3 開發中（F-004 探測 UI、F-051 設定頁、F-063 OTA rollback、F-070~073 SOS 已完成）
+> 版本：1.3  
+> 日期：2026-06-07  
+> 狀態：Unit C6L 實機 bring-up 完成（WiFi/HTTP/UDP 橋接、F-053 握手、OLED、按鈕、**LoRa 雙機收發**、SOS 皆實機驗證）。新增 §2.4 實機腳位、§5.4 線路幀、§11 注意事項
 
 ---
 
@@ -46,6 +46,33 @@
 | 手機 USB-C 供電 | USB Type-C | 手機隨身帶（手機同時可能是 APP 端，也可能只供電） |
 | 行動電源 | USB Type-C | 定點/基站、無人中繼 |
 | 太陽能 + 鋰電池 | Grove 5V（睡眠功耗更低） | 長期無人中繼站 |
+
+### 2.4 實機腳位（依 m5stack/meshtastic-firmware variant，已實機驗證）
+
+**SX1262 LoRa（SPI）：**
+
+| 訊號 | GPIO | 備註 |
+|------|------|------|
+| SCK / MISO / MOSI / NSS | 20 / 22 / 21 / 23 | SPI |
+| DIO1（IRQ） | 7 | |
+| BUSY | 19 | |
+| RESET | **無 GPIO**（RADIOLIB_NC） | 改由 I2C 擴充晶片控制（見下） |
+| RF 開關 | SX1262 **DIO2 內建**（`setDio2AsRfSwitch`） | 不用外部 GPIO |
+| TCXO | **DIO3 供電 3.0V** | `radio.begin` 需指定，否則晶振不起、初始化失敗 |
+| 參數 | 920 MHz / BW500 / SF7 / CR4:5 / SyncWord 0x12 / +22dBm | |
+
+**PI4IOE5V6408 I2C IO 擴充晶片（I2C：SDA=10, SCL=8，位址 0x43）：**
+
+| 腳 | 功能 | 備註 |
+|----|------|------|
+| P7 | SX1262 NRST（reset） | 開機需拉高釋放，否則 `radio.begin` 卡死 |
+| P6 | RF 天線開關 | 初始化拉高 |
+| P5 | LNA Enable | |
+| P0/P1 | 使用者按鈕 | |
+
+**其他：** OLED SSD1306（SPI，CS=6/DC=18/RST=15）、WS2812 RGB（GPIO2）、Buzzer（GPIO11）、GPS（GPIO4/5）。
+
+> OLED/按鈕/蜂鳴器經 `M5.begin()`（M5Unified）即可使用；RGB/LoRa/擴充晶片需自行初始化。
 
 ---
 
@@ -94,7 +121,7 @@ C6L 提供兩種傳輸層，**可同時啟用**，上層封包格式完全一致
 
 | 功能 | 說明 |
 |------|------|
-| **F-001** Device ID | 出廠燒錄唯一 ID（2 bytes，0x0001~0xFFFE），**OLED 開機頁顯示真實 ID** |
+| **F-001** Device ID | 2 bytes（0x0001~0xFFFE）；**預設由晶片 MAC 的 NIC 後兩碼衍生**（每顆自動唯一），可經 APP 設定覆寫、存 NVS；**OLED 開機頁顯示真實 ID**。⚠️ 勿用 `getEfuseMac()&0xFFFF`（那是所有 Espressif 共用的 OUI 前綴，會撞號） |
 | **F-002** 暱稱 | APP 上可編輯裝置暱稱，存於裝置 NVS，顯示於聊天介面 |
 | **F-003** 手動新增聯絡人 | 看對方 C6L 螢幕上的 ID，在 APP 手動輸入 |
 | **F-004** 廣播探測發現 | APP 發送廣播 PING，附近裝置回覆 ID + 暱稱，列出清單選擇加入通訊錄 |
@@ -249,6 +276,27 @@ C6L 提供兩種傳輸層，**可同時啟用**，上層封包格式完全一致
 
 > 廣播和群組封包：既推送給 APP 也做中繼轉發。
 
+### 5.4 手機 ↔ C6L 線路幀格式（已實作）
+
+手機與 C6L 之間（USB Serial 或 WiFi UDP）以「線路幀」封裝，第 1 byte 為類型：
+
+```
+LINK_DATA 0x01  資料（LoRa 封包）
+    phone → C6L：[01][LoRa 封包]
+    C6L → phone：[01][RSSI int16 BE][LoRa 封包]
+LINK_CTRL 0x02  控制/設定（JSON, UTF-8），雙向
+```
+
+- **傳輸層邊界**：USB Serial 另加 2-byte 大端長度前綴；WiFi 一個 UDP datagram 即一幀。
+- **CTRL JSON**：
+  - 握手（F-053）：APP→`{"cmd":"hello","name":...,"app_ver":...}`；C6L→`{"status":"hello","device_id":N,"name":...,"fw_ver":...}`
+  - 設定（F-051）：APP→`{"cmd":"set_config",...}`；C6L→`{"status":"ok"}`
+- **DATA 方向差異**：C6L→phone 多帶 2-byte RSSI（int16 大端），phone→C6L 無。
+- C6L 收到 DATA 後，**保留 APP 提供的 DST/SEQ/TYPE/PAYLOAD**，覆寫 SRC/HOP 並重算 MAC 才發 LoRa。
+
+> **OTA 不走此線路幀**：韌體更新走獨立 HTTP（WiFi TCP，`POST /update`），見 §4.8。
+> 另有 `GET /version` 回報韌體版本與（除錯用）LoRa 狀態。
+
 ---
 
 ## 6. APP 功能規格
@@ -377,3 +425,35 @@ APP 與 C6L 的連線同樣可走 USB Serial 或 WiFi，兩者實作同一 `ICom
 6. **洪泛頻寬** — 每個節點都轉發，節點密集時可能造成頻道壅塞，TTL 需合理設定
 7. **USB 供電 vs APP** — USB host 接上不等於有 APP；需靠 F-053 握手區分，否則純供電手機會被誤判為資料端
 8. **WiFi AP 功耗** — WiFi AP 常開會增加耗電，電池供電的無人中繼站可由 F-041 長按關閉 WiFi 省電
+
+---
+
+## 11. 實機 bring-up 注意事項與已知問題（踩雷紀錄）
+
+> 以下為 Unit C6L 實機調試取得的關鍵經驗，務必遵守以免重蹈覆轍。
+
+### 11.1 韌體初始化順序（會導致整機不動）
+
+1. **必須先呼叫 `M5.begin()`** 才能使用 `M5.Display / M5.BtnA / M5.Speaker`；否則開機即當機（OLED 全黑、無輸出）。
+2. **`DeviceConfig` 要值初始化（`cfg{}`）**：新機 NVS 為空時，`Preferences.getString` 不會寫入緩衝區，未初始化的堆疊填充值（0xA5）會被當成設定（曾導致 WiFi SSID 變成一串 `A5A5...`）。
+
+### 11.2 LoRa / I2C（會導致 LoRa 不通）
+
+3. **SX1262 沒有 GPIO RESET**，reset 線接在 I2C 擴充晶片 P7。**必須先初始化擴充晶片並拉高 P7 釋放 reset，才能 `radio.begin()`**，否則卡在等 BUSY（整個主迴圈停擺）。
+4. **`M5.begin()` 會先佔用 Wire（I2C）**；要存取擴充晶片（GPIO10/8）必須 **`Wire.end()` 後再 `Wire.begin(10,8)`** 強制切換腳位，否則 re-begin 被忽略、掃不到 0x43。
+5. **TCXO 必須在 `radio.begin` 指定 DIO3 供電 3.0V**，否則晶振不起、初始化失敗。
+6. **RF 開關用 `setDio2AsRfSwitch(true)`**（SX1262 內建），不要自己用 GPIO 控制（GPIO4/5 其實是 GPS）。
+7. **Device ID 用 MAC 的 NIC 後兩碼**（`esp_read_mac` 的 `mac[4],[5]`），不要用 `getEfuseMac()&0xFFFF`（OUI 前綴，全部裝置會撞成同一個 ID）。
+
+### 11.3 實機觀測 / 測試環境
+
+8. **ESP32-C6 原生 USB（HWCDC）的 serial 輸出，重置後 host 端會短暫斷線**，PC 不易穩定讀到開機 log。**建議改用 WiFi 遙測**（`GET /version` 走 TCP，可靠）做實機除錯，或在 `loop()` 放週期心跳。
+9. **Windows 防火牆會擋掉回傳的 UDP**，導致從 PC 測 UDP 像「卡死」其實是收不到回應；**PC 端診斷請用 HTTP/TCP**。手機連 WiFi 不受此影響。
+10. **多台同時測試**：softAP 預設同網段 `192.168.4.x`，若 PC 有兩張無線網卡同時連上兩台會路由衝突；多機測試建議**用手機**、或讓裝置改不同網段、或用裝置自身（OLED/LoRa 統計）觀測。
+11. **未號數時間比較**：保留畫面（如 SOS 警示）勿用 `now - (millis()+N)` 無號數比較（會下溢立即失效），改用 `(int32_t)(holdUntil - now) > 0`。
+
+### 11.4 已知硬體/待辦
+
+- 某些 Unit 的 **OLED 可能不亮**（疑硬體/排線；本批 BF8C 不亮、CDB8 正常）。
+- **SOS 三連按**偵測時序可再調校。
+- 雙機 LoRa 收發、SOS 端到端**已實機驗證通過**（RSSI -27、Rx 累加）。

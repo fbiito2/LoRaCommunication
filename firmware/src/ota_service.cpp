@@ -12,6 +12,12 @@ static int     _progress = 0;
 static int     _lastDrawn = -1;
 static size_t  _written  = 0;
 static size_t  _total    = 0;
+static bool    _loraOk   = false;
+static int     _loraErr  = 0;
+static String  _i2cScan  = "?";
+
+void setLoraStatus(bool ok, int err) { _loraOk = ok; _loraErr = err; }
+void setI2cScan(const String& s) { _i2cScan = s; }
 
 // ── OLED 直接繪製進度（OTA 上傳期間 main loop 被 handleClient 阻塞，
 //    Display::loop 不會執行，故由此直接畫）─────────────────────
@@ -27,10 +33,12 @@ static void drawProgress(const char* title) {
     M5.Display.fillRect(2, 30, bar, 10, TFT_WHITE);
 }
 
-// GET /version（F-064）
+// GET /version（F-064）+ LoRa 狀態（實機除錯）
 static void handleVersion() {
-    _server.send(200, "application/json",
-                 String("{\"fw_ver\":\"") + _fwVer + "\"}");
+    String j = String("{\"fw_ver\":\"") + _fwVer + "\",\"lora_ok\":" +
+               (_loraOk ? "true" : "false") + ",\"lora_err\":" + String(_loraErr) +
+               ",\"i2c\":\"" + _i2cScan + "\"}";
+    _server.send(200, "application/json", j);
 }
 
 // POST /update 完成回應

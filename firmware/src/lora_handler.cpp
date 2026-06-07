@@ -1,6 +1,8 @@
 #include "lora_handler.h"
 #include "crypto.h"
 #include "relay.h"
+#include <SPI.h>
+#include <Wire.h>
 #include <string.h>
 
 LoRaHandler loraHandler;
@@ -8,28 +10,76 @@ LoRaHandler loraHandler;
 static volatile bool _isrFlag = false;
 static void IRAM_ATTR _loraIsr() { _isrFlag = true; }
 
+// ── PI4IOE5V6408 I2C IO 擴充晶片（Unit C6L：控制 SX1262 RESET/RF 開關）──
+// 依 m5stack/meshtastic-firmware variant.cpp。位址 0x43，I2C SDA=10 / SCL=8。
+//   P7 = SX1262 NRST、P6 = RF 天線開關、P5 = LNA、P0/P1 = 按鈕
+#define EXP_ADDR        0x43
+#define EXP_I2C_SDA     10
+#define EXP_I2C_SCL     8
+#define EXP_REG_DIR     0x03  // IO 方向（1=輸出）
+#define EXP_REG_OUT     0x05  // 輸出設定
+#define EXP_REG_HIZ     0x07  // 高阻抗模式
+#define EXP_REG_PULLEN  0x0B  // 上下拉致能
+#define EXP_REG_PULLSEL 0x0D  // 上下拉選擇
+#define EXP_REG_INDEF   0x09  // 輸入預設
+#define EXP_REG_IRQMASK 0x11  // 中斷遮罩
+#define EXP_REG_IRQ     0x13  // IRQ 狀態
+#define EXP_REG_RESET   0x01  // 晶片重置
+
+static void expWrite(uint8_t reg, uint8_t val) {
+    Wire.beginTransmission(EXP_ADDR);
+    Wire.write(reg); Wire.write(val);
+    Wire.endTransmission();
+}
+
+// 初始化擴充晶片並釋放/重置 SX1262（P7）、開 RF 開關（P6）
+static bool initExpanderAndResetRadio() {
+    Wire.begin(EXP_I2C_SDA, EXP_I2C_SCL);
+    Wire.beginTransmission(EXP_ADDR);
+    if (Wire.endTransmission() != 0) {
+        Serial.println("[LoRa] 找不到 IO 擴充晶片 0x43");
+        return false;
+    }
+    expWrite(EXP_REG_RESET,  0xFF);        delay(10);
+    expWrite(EXP_REG_DIR,    0b11000000);  // P6,P7 輸出
+    expWrite(EXP_REG_HIZ,    0b00111100);
+    expWrite(EXP_REG_PULLSEL,0b11000011);
+    expWrite(EXP_REG_PULLEN, 0b11000011);
+    expWrite(EXP_REG_INDEF,  0b00000011);
+    expWrite(EXP_REG_IRQMASK,0b11111100);
+
+    // SX1262 reset 脈衝：P7 低→高；同時 P6(RF 開關) 拉高
+    expWrite(EXP_REG_OUT, 0b01000000);     // P7=0 (reset), P6=1
+    delay(5);
+    expWrite(EXP_REG_OUT, 0b11000000);     // P7=1 (release), P6=1
+    delay(10);
+    return true;
+}
+
 bool LoRaHandler::begin(uint16_t myId) {
     _myId = myId;
 
-    // ANT_SW 與 LNA_EN：Unit C6L 需主動 enable
-    pinMode(LORA_ANT_SW, OUTPUT);
-    pinMode(LORA_LNA_EN, OUTPUT);
-    digitalWrite(LORA_ANT_SW, HIGH);
-    digitalWrite(LORA_LNA_EN, HIGH);
+    // 先初始化 IO 擴充晶片並釋放 SX1262 reset（否則 radio.begin 會卡在等 BUSY）
+    if (!initExpanderAndResetRadio()) {
+        _lastErr = -999; // 擴充晶片不存在
+        return false;
+    }
 
-    // SX1262 硬體重置（規格書：拉低 100ms 再拉高）
-    pinMode(LORA_NRST, OUTPUT);
-    digitalWrite(LORA_NRST, LOW);
-    delay(100);
-    digitalWrite(LORA_NRST, HIGH);
-    delay(10);
+    // 設定 SPI 腳位（Unit C6L：SCK20 / MISO22 / MOSI21 / NSS23）
+    SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
 
+    // SX1262 初始化：TCXO 由 DIO3 供電 3.0V（不設會晶振不起、begin 失敗）
     int state = _radio.begin(LORA_FREQ, LORA_BW, LORA_SF, LORA_CR,
-                             LORA_SYNC_WORD, LORA_TX_POWER);
+                             LORA_SYNC_WORD, LORA_TX_POWER,
+                             LORA_PREAMBLE_SHORT, LORA_TCXO_V, false);
+    _lastErr = state;
     if (state != RADIOLIB_ERR_NONE) {
         Serial.printf("[LoRa] 初始化失敗，錯誤碼: %d\n", state);
         return false;
     }
+
+    // RF 收發開關由 SX1262 DIO2 內建控制
+    _radio.setDio2AsRfSwitch(true);
 
     _radio.setDio1Action(_loraIsr);
     _radio.startReceive();

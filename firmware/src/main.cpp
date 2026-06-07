@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Wire.h>
 #include <esp_ota_ops.h>  // F-063：OTA rollback 支援
 #include "config.h"
 #include "crypto.h"
@@ -16,6 +17,12 @@
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
 #define FW_VERSION "0.4.0"
+
+// ── LoRa 啟用旗標 ─────────────────────────────────────────
+// 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
+// 原因為 SX1262 RESET 經 I2C 擴充晶片、復位序列尚未完全正確（WIP）。
+// 關閉時裝置仍為完整可用的 WiFi/USB 橋接；LoRa 硬體初始化修好後改回 1。
+#define ENABLE_LORA 1
 
 // ── 線路幀類型（手機 ↔ C6L，USB/WiFi 共用）─────────────────
 // 傳輸層各自負責邊界（USB 2-byte 長度前綴 / WiFi 一個 datagram）。
@@ -154,6 +161,8 @@ static void handleCtrl(int idx, const char* json, size_t len) {
         ack["device_id"] = _cfg.deviceId;
         ack["name"]      = _cfg.deviceName;
         ack["fw_ver"]    = FW_VERSION;
+        ack["lora_ok"]   = _loraOk; // 實機驗證：LoRa 初始化是否成功
+        ack["lora_err"]  = loraHandler.lastError(); // radio.begin 錯誤碼
         char out[160];
         size_t n = serializeJson(ack, out, sizeof(out));
         sendCtrl(idx, out, n);
@@ -208,6 +217,20 @@ void setup() {
     auto m5cfg = M5.config();
     M5.begin(m5cfg);
 
+    // ── I2C 掃描（實機除錯：找 PI4IOE5V6408 擴充晶片）──────────
+    {
+        Wire.begin(10, 8); // 預期 SDA=10, SCL=8
+        String found = "";
+        for (uint8_t a = 1; a < 127; a++) {
+            Wire.beginTransmission(a);
+            if (Wire.endTransmission() == 0) {
+                if (found.length()) found += ",";
+                found += String(a, HEX);
+            }
+        }
+        Ota::setI2cScan(found.length() ? found : String("none@10/8"));
+    }
+
     Serial.println("=== LoRa PTT Bridge 啟動 ===");
 
     _cfg = configLoad();
@@ -248,9 +271,15 @@ void setup() {
     Display::wifiIp     = WiFi.softAPIP().toString();
 
     // LoRa（記錄初始化結果，供心跳輸出判斷腳位是否正確）
+#if ENABLE_LORA
+    Ota::setLoraStatus(false, -1000); // -1000 = 初始化進行中（若卡死，/version 會停在此值）
     _loraOk = loraHandler.begin(_cfg.deviceId);
+    Ota::setLoraStatus(_loraOk, loraHandler.lastError());
     Serial.printf("[Main] LoRa 初始化 %s\n", _loraOk ? "成功" : "失敗");
     loraHandler.setPacketCallback(onLoRaReceived);
+#else
+    Serial.println("[Main] LoRa 暫時停用（ENABLE_LORA=0）");
+#endif
 
     // Relay：轉發用 sendRaw 原樣送出，保留原始 SRC/SEQ/MAC（去重依據）
     relayHandler.init(_cfg.deviceId, [](const uint8_t* d, size_t l) {
@@ -309,7 +338,9 @@ void loop() {
     Display::appStatus  = (u && w) ? "USB+WiFi" : u ? "USB" : w ? "WiFi" : "none";
     Display::relayCount = relayHandler.forwardCount();
 
+#if ENABLE_LORA
     loraHandler.loop();
+#endif
     PowerMgr::loop();
     Display::loop();
     Button::loop();

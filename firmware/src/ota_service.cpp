@@ -12,12 +12,16 @@ static int     _progress = 0;
 static int     _lastDrawn = -1;
 static size_t  _written  = 0;
 static size_t  _total    = 0;
-static bool    _loraOk   = false;
-static int     _loraErr  = 0;
-static String  _i2cScan  = "?";
+static bool     _loraOk   = false;
+static int      _loraErr  = 0;
+static String   _i2cScan  = "?";
+static uint32_t _rxCount  = 0;
+static int      _rxRssi   = 0;
+static uint16_t _rxSrc    = 0;
 
 void setLoraStatus(bool ok, int err) { _loraOk = ok; _loraErr = err; }
 void setI2cScan(const String& s) { _i2cScan = s; }
+void setRxStats(uint32_t count, int rssi, uint16_t src) { _rxCount = count; _rxRssi = rssi; _rxSrc = src; }
 
 // ── OLED 直接繪製進度（OTA 上傳期間 main loop 被 handleClient 阻塞，
 //    Display::loop 不會執行，故由此直接畫）─────────────────────
@@ -35,9 +39,11 @@ static void drawProgress(const char* title) {
 
 // GET /version（F-064）+ LoRa 狀態（實機除錯）
 static void handleVersion() {
+    char src[8]; snprintf(src, sizeof(src), "%04X", _rxSrc);
     String j = String("{\"fw_ver\":\"") + _fwVer + "\",\"lora_ok\":" +
                (_loraOk ? "true" : "false") + ",\"lora_err\":" + String(_loraErr) +
-               ",\"i2c\":\"" + _i2cScan + "\"}";
+               ",\"i2c\":\"" + _i2cScan + "\",\"rx\":" + String(_rxCount) +
+               ",\"rssi\":" + String(_rxRssi) + ",\"src\":\"" + src + "\"}";
     _server.send(200, "application/json", j);
 }
 

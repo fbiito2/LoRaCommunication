@@ -112,6 +112,7 @@ static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
     Led::setLoRaRx();
     Display::lastRssi = rssi;
     Display::rxCount++;
+    Ota::setRxStats(Display::rxCount, rssi, pkt.srcId); // 供 /version 觀察雙機收訊
 
     // F-073：收到 SOS → 全節點警報（不管有沒有接手機）
     if (pkt.type == PKT_TYPE_SOS) {

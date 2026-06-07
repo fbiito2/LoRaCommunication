@@ -1,5 +1,6 @@
 #include "config.h"
 #include <Preferences.h>
+#include <esp_mac.h>
 #include <string.h>
 
 static const char* NVS_NS = "loraptt"; // NVS 命名空間
@@ -19,7 +20,15 @@ DeviceConfig configLoad() {
     prefs.begin(NVS_NS, true); // 唯讀
 
     DeviceConfig cfg{}; // 值初始化為全零，避免 NVS 無 key 時讀到未初始化的垃圾值（如 0xA5）
-    cfg.deviceId = prefs.getUShort("deviceId", 0xA001);
+
+    // 預設 Device ID 由 MAC 的 NIC 專屬後兩碼衍生（每顆晶片唯一；避免用到所有
+    // Espressif 共用的 OUI 前綴而撞號）
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    uint16_t macId = (uint16_t)((mac[4] << 8) | mac[5]);
+    if (macId == 0x0000) macId = 0x0001;
+    if (macId >= 0xFFE0) macId &= 0x7FFF; // 避開群組/廣播保留範圍
+    cfg.deviceId = prefs.getUShort("deviceId", macId);
     prefs.getString("name",      cfg.deviceName, sizeof(cfg.deviceName));
     prefs.getString("wifiSsid",  cfg.wifiSsid,   sizeof(cfg.wifiSsid));
     prefs.getString("wifiPass",  cfg.wifiPass,   sizeof(cfg.wifiPass));

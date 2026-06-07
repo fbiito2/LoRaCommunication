@@ -24,6 +24,10 @@
 // 關閉時裝置仍為完整可用的 WiFi/USB 橋接；LoRa 硬體初始化修好後改回 1。
 #define ENABLE_LORA 1
 
+// ── 測試用：每 3 秒自動廣播一個 beacon（雙機 LoRa 收發驗證；測完設 0）──
+// 實機已驗證雙機收發成功（CDB8 收到 BF8C，RSSI -27），平時關閉。
+#define LORA_TEST_BEACON 0
+
 // ── 線路幀類型（手機 ↔ C6L，USB/WiFi 共用）─────────────────
 // 傳輸層各自負責邊界（USB 2-byte 長度前綴 / WiFi 一個 datagram）。
 //   LINK_DATA：phone→C6L = [01][LoRa封包]；C6L→phone = [01][RSSI int16 BE][LoRa封包]
@@ -348,6 +352,25 @@ void loop() {
     Display::loop();
     Button::loop();
     Led::loop();
+
+#if ENABLE_LORA && LORA_TEST_BEACON
+    // 測試：每 3 秒自動廣播一個 beacon，供雙機 LoRa 收發驗證
+    static uint32_t _beaconMs = 0;
+    static uint16_t _beaconSeq = 0xE000;
+    if (_loraOk && millis() - _beaconMs >= 3000) {
+        _beaconMs = millis();
+        LoRaPacket bp{};
+        bp.dstId = DST_BROADCAST;
+        bp.type  = PKT_TYPE_TEXT;
+        bp.seq   = _beaconSeq++;
+        const char* m = "BEACON";
+        bp.payloadLen = 6;
+        memcpy(bp.payload, m, 6);
+        bool ok = loraHandler.sendPacket(bp);
+        Display::txCount++;
+        Ota::setTxStats(Display::txCount, ok);
+    }
+#endif
 
     // ── 心跳輸出（每 2 秒）：實機監看用，原生 USB 重置後仍能持續觀察 ──
     static uint32_t _hbMs = 0;

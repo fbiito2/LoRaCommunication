@@ -457,3 +457,15 @@ APP 與 C6L 的連線同樣可走 USB Serial 或 WiFi，兩者實作同一 `ICom
 - **OLED 偶發開機不亮屬暫態**（曾見 BF8C 開機不亮，重新上電/重燒後恢復；兩台 OLED 現均正常），非硬體缺陷；若遇到先重上電或重燒。
 - **SOS 三連按**偵測時序可再調校。
 - 雙機 LoRa 收發、SOS 端到端**已實機驗證通過**（RSSI -27、Rx 累加）；兩台 OLED 皆正常。
+
+### 11.5 Android App bring-up 注意事項（S25 實機）
+
+> 手機 App 端到端（手機→WiFi→C6L→LoRa→另一台）已實機驗證通過。過程踩雷：
+
+1. **Blazor 路由衝突**：兩個頁面同為 `@page "/"`（範本殘留 `Index.razor` 與自訂首頁）→ Router 排序拋例外 → App 卡在 Loading。需移除重複路由（並清掉 Counter/FetchData/SurveyPrompt 等範本殘留）。
+2. **Codec2 native library 未編譯**：首頁若注入 PTT 的 `MainViewModel`→`Codec2Service`，收到資料呼叫 `Decode` 會 `DllNotFoundException` 崩潰。對策：文字頁設為首頁、解碼包 try/catch、僅通話中解碼。
+3. **Android「無對外網路的 WiFi」路由**：C6L 的 AP 沒有對外網際網路，Android 預設會把 UDP/TCP 送往行動網路 → 連不到 192.168.4.1。**對策：`ConnectivityManager.BindProcessToNetwork` 綁定到 WiFi 網路**（NetworkRequest 要 `RemoveCapability(Internet)`），manifest 需 `CHANGE_NETWORK_STATE` 權限。
+4. **OTA http 明文**：Android 9+ 預設擋 cleartext，OTA 的 `http://192.168.4.1/update` 需 manifest `usesCleartextTraffic="true"`。
+5. **adb 安裝 Debug APK**：Debug 預設 Fast Deployment 不把 assemblies 打包進 APK，直接 `adb install` 會 `monodroid: No assemblies found → SIGABRT`。需 `-p:EmbedAssembliesIntoApk=true` 或用 VS 部署。
+6. **實機除錯**：MAUI `ILogger`(AddDebug) 不一定進 logcat；改用 `Console.WriteLine`（顯示為 logcat `DOTNET` tag）。手機連無網路 WiFi 時系統 NetworkMonitor 會狂刷 logcat 把日誌擠掉，需用 `adb logcat -s DOTNET` 過濾。
+7. **連線冪等**：`ConnectAsync` 應在已連線時直接返回，避免重複建立 UdpClient 把接收迴圈弄死。

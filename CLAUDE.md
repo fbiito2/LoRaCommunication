@@ -797,3 +797,13 @@ app/
 - 多機測試：softAP 同網段 192.168.4.x，PC 雙網卡會路由衝突 → 用手機或裝置自身 OLED 觀測
 - 保留畫面（SOS 警示）勿用無號數 `now-(millis()+N)`（會下溢），用 `(int32_t)(holdUntil-now)>0`
 - 雙機 LoRa 收發 + SOS 已實機驗證通過（RSSI -27、Rx 累加）；兩台 OLED 皆正常（OLED 偶發開機不亮為暫態，重上電/重燒可恢復，非硬體缺陷）
+
+### Android App 實機注意事項（手機→WiFi→C6L→LoRa 已端到端驗證）
+
+- **Android 無對外網路的 WiFi 路由**：C6L AP 無網際網路，Android 會把 UDP 送往行動網路 → 連不到 192.168.4.1。需 `ConnectivityManager.BindProcessToNetwork` 綁定 WiFi（NetworkRequest `RemoveCapability(Internet)`）+ manifest `CHANGE_NETWORK_STATE`
+- **Blazor 路由勿重複**：兩頁同為 `@page "/"`（如範本 Index 與自訂首頁）會卡 Loading（Router 排序例外）；文字頁設為首頁、PTT 改 /ptt
+- **Codec2 native lib 未編譯**：PTT 的 `Codec2.Decode` 會 DllNotFound 崩潰，需 try/catch 並僅通話中解碼；首頁不要用到它
+- **OTA http**：manifest 需 `usesCleartextTraffic="true"`（Android 9+ 擋明文）
+- **adb 安裝 Debug APK**：需 `-p:EmbedAssembliesIntoApk=true`，否則 Fast Deployment 找不到 assemblies → SIGABRT
+- **實機除錯**：用 `Console.WriteLine`（→ logcat `DOTNET` tag）；`adb logcat -s DOTNET` 過濾（無網路 WiFi 時 NetworkMonitor 會狂刷洗掉日誌）
+- `ConnectAsync` 要冪等（已連線直接返回），避免重複建 UdpClient 弄死接收迴圈

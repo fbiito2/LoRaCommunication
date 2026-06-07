@@ -98,17 +98,23 @@ public partial class MainViewModel : ObservableObject
     // ── 接收資料 → Codec2 解碼 → 播放 ────────────────────
     private void OnCommDataReceived(byte[] data)
     {
-        // 只取 payload 部分（跳過封包 header 8B + MAC 4B）
-        // 暫時簡化處理：直接視為 Codec2 bytes
-        _rxBuffer.AddRange(data);
-
-        while (_rxBuffer.Count >= Codec2Service.BytesPerFrame)
+        // 僅在通話中才嘗試解碼語音；其餘（文字/握手線路幀）交給 MessagingService 處理。
+        // 並以 try/catch 保護：Codec2 native library 未編譯時不可讓整個 App 崩潰。
+        if (!IsPttActive) return;
+        try
         {
-            var frame = _rxBuffer.GetRange(0, Codec2Service.BytesPerFrame).ToArray();
-            _rxBuffer.RemoveRange(0, Codec2Service.BytesPerFrame);
-
-            var pcm = _codec2.Decode(frame);
-            _ = _play.PlayPcmAsync(pcm);
+            _rxBuffer.AddRange(data);
+            while (_rxBuffer.Count >= Codec2Service.BytesPerFrame)
+            {
+                var frame = _rxBuffer.GetRange(0, Codec2Service.BytesPerFrame).ToArray();
+                _rxBuffer.RemoveRange(0, Codec2Service.BytesPerFrame);
+                var pcm = _codec2.Decode(frame);
+                _ = _play.PlayPcmAsync(pcm);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "語音解碼失敗（Codec2 native library 可能未編譯）");
         }
     }
 

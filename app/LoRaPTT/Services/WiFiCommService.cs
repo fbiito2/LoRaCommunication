@@ -32,15 +32,24 @@ public class WiFiCommService : ICommService
     /// </summary>
     public async Task ConnectAsync(CancellationToken ct = default)
     {
+        if (IsConnected) { Console.WriteLine("LPTT: 已連線，忽略重複連接"); return; }
         const string c6lIp = "192.168.4.1";
         _logger.LogInformation("WiFi UDP 連接至 {IP}:{Port}", c6lIp, UDP_PORT);
 
         _udp      = new UdpClient();
         _remoteEp = new IPEndPoint(IPAddress.Parse(c6lIp), UDP_PORT);
 
-        // 發送空封包讓 C6L 知道手機 IP（觸發 clientKnown）
-        await _udp.SendAsync(new byte[] { 0x00 }, 1, _remoteEp)
-                  .WaitAsync(ct);
+        try
+        {
+            // 發送空封包讓 C6L 知道手機 IP（觸發 clientKnown）
+            await _udp.SendAsync(new byte[] { 0x00 }, 1, _remoteEp).WaitAsync(ct);
+            Console.WriteLine("LPTT: 連線—已送出註冊封包到 192.168.4.1:5000");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("LPTT: 連線送出失敗: " + ex.Message);
+            throw;
+        }
 
         IsConnected = true;
         OnConnectionChanged?.Invoke(true);
@@ -50,6 +59,7 @@ public class WiFiCommService : ICommService
         _ = ReceiveLoopAsync(_recvCts.Token);
 
         _logger.LogInformation("WiFi UDP 連線成功");
+        Console.WriteLine("LPTT: WiFi 連線完成，接收迴圈啟動");
     }
 
     public async Task SendAsync(byte[] data, CancellationToken ct = default)
@@ -80,7 +90,10 @@ public class WiFiCommService : ICommService
             {
                 var result = await _udp!.ReceiveAsync(ct);
                 if (result.Buffer?.Length > 0)
+                {
+                    Console.WriteLine($"LPTT: 收到 UDP {result.Buffer.Length}B 來自 {result.RemoteEndPoint}");
                     OnDataReceived?.Invoke(result.Buffer);
+                }
             }
         }
         catch (OperationCanceledException) { /* 正常結束 */ }

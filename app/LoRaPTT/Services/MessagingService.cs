@@ -59,8 +59,8 @@ public sealed class MessagingService : IMessagingService
             name = LocalNickname,
             app_ver = AppVersion,
         });
-        try { await _comm.SendAsync(LinkFrame.WrapCtrl(json)); }
-        catch (Exception ex) { _logger.LogError(ex, "送出握手 hello 失敗"); }
+        try { await _comm.SendAsync(LinkFrame.WrapCtrl(json)); Console.WriteLine("LPTT: 已送出握手 hello"); }
+        catch (Exception ex) { _logger.LogError(ex, "送出握手 hello 失敗"); Console.WriteLine("LPTT: 握手 hello 失敗: " + ex.Message); }
     }
 
     // ── 送出 ────────────────────────────────────────────────
@@ -120,6 +120,7 @@ public sealed class MessagingService : IMessagingService
     private void OnDataReceived(byte[] frame)
     {
         if (frame is null || frame.Length < 1) return;
+        Console.WriteLine($"LPTT: MS 收到幀 {frame.Length}B 類型=0x{frame[0]:X2}");
 
         switch (frame[0])
         {
@@ -170,6 +171,7 @@ public sealed class MessagingService : IMessagingService
 
             if (status == "hello")
             {
+                Console.WriteLine("LPTT: 收到 hello-ack: " + json);
                 if (root.TryGetProperty("device_id", out var idEl) && idEl.TryGetUInt16(out var id))
                     LocalDeviceId = id;
                 if (root.TryGetProperty("fw_ver", out var fwEl))

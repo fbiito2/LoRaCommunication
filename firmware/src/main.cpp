@@ -201,8 +201,9 @@ static void onLinkReceived(int idx, const uint8_t* data, size_t len) {
             return;
         }
         Led::setLoRaTx();
-        loraHandler.sendPacket(pkt);
+        bool txOk = loraHandler.sendPacket(pkt);
         Display::txCount++;
+        Ota::setTxStats(Display::txCount, txOk); // 供 /version 確認是否真的發射
         Led::setCarryMode();
     } else if (type == LINK_CTRL) {
         handleCtrl(idx, (const char*)(data + 1), len - 1);

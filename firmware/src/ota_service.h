@@ -14,6 +14,7 @@ namespace Ota {
     void setLoraStatus(bool ok, int err); // 供 /version 回報 LoRa 初始化狀態（實機除錯）
     void setI2cScan(const String& s);      // 供 /version 回報 I2C 掃描結果（實機除錯）
     void setRxStats(uint32_t count, int rssi, uint16_t src); // LoRa 收訊統計（雙機測試）
+    void setTxStats(uint32_t count, bool ok);                // LoRa 發射統計（雙機測試）
     bool isActive();                   // 更新進行中
     int  progress();                   // 0~100
 }

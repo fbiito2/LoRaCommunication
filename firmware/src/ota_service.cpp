@@ -18,10 +18,13 @@ static String   _i2cScan  = "?";
 static uint32_t _rxCount  = 0;
 static int      _rxRssi   = 0;
 static uint16_t _rxSrc    = 0;
+static uint32_t _txCount  = 0;
+static int      _txOk     = -1; // -1=尚無, 1=最後一次成功, 0=失敗
 
 void setLoraStatus(bool ok, int err) { _loraOk = ok; _loraErr = err; }
 void setI2cScan(const String& s) { _i2cScan = s; }
 void setRxStats(uint32_t count, int rssi, uint16_t src) { _rxCount = count; _rxRssi = rssi; _rxSrc = src; }
+void setTxStats(uint32_t count, bool ok) { _txCount = count; _txOk = ok ? 1 : 0; }
 
 // ── OLED 直接繪製進度（OTA 上傳期間 main loop 被 handleClient 阻塞，
 //    Display::loop 不會執行，故由此直接畫）─────────────────────
@@ -43,7 +46,8 @@ static void handleVersion() {
     String j = String("{\"fw_ver\":\"") + _fwVer + "\",\"lora_ok\":" +
                (_loraOk ? "true" : "false") + ",\"lora_err\":" + String(_loraErr) +
                ",\"i2c\":\"" + _i2cScan + "\",\"rx\":" + String(_rxCount) +
-               ",\"rssi\":" + String(_rxRssi) + ",\"src\":\"" + src + "\"}";
+               ",\"rssi\":" + String(_rxRssi) + ",\"src\":\"" + src + "\"" +
+               ",\"tx\":" + String(_txCount) + ",\"txok\":" + String(_txOk) + "}";
     _server.send(200, "application/json", j);
 }
 

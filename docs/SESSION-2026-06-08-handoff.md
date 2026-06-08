@@ -68,6 +68,16 @@
 
 3. **(後期) 重新啟用 RxDutyCycle 省電** — 前提：喚醒前導碼加長到 ~4000 symbols（見一-4）。
 
+4. **(後期構想) 與 Meshtastic 生態互通 — App 翻譯橋(閘道層,非 RF 層)**
+   - 概念：手機 App 同時連「一台刷成 Meshtastic 的裝置(BLE/序列, 用其公開 protobuf API)」+「自家 C6L」，
+     App 當雙語翻譯：他們 protobuf ↔ 我們封包格式，雙向轉。
+   - **只翻文字/相容訊息；語音不過**(Meshtastic 網路不支援語音；RF 參數也互斥 SF7/BW500 vs LongFast)。
+   - 橋接發生在**手機**(唯一接點)，兩個 LoRa 網路 RF 上仍分開；需一台實體 Meshtastic 節點當入口。
+   - 需做 ID/定址映射表(他們 4-byte node number + channel/PSK ↔ 我們 2-byte device ID)。
+   - **不動 C6L 韌體、不重寫 RF**；純 App 端新增 `MeshtasticCommService`(與現有 ICommService 抽象平行掛上)。
+   - 排程：**等語音 PTT(Phase 4)與搜尋可靠度收尾後再做**；延後零架構代價。手邊多的硬體可隨時刷一台
+     Meshtastic 並行實驗/學習，但不在關鍵路徑。
+
 ---
 
 ## 三、建置/部署踩雷（務必照做，否則白忙一場）

@@ -110,3 +110,34 @@
 - 確認改動方向前先看本檔「待辦」與各結論標註，**已排除的方向（按鈕硬體、名稱排除）勿重查**。
 - 改 APP 後務必走「uninstall → install --no-incremental」流程，否則會誤判「沒更新」。
 - 任何改完依專案規則 commit + push。
+
+---
+
+## 五、2026-06-08 晚間續做（家裡筆電，已全部 push 到 35e4c79）
+
+### 🔒 最重要：工具鏈版本已鎖定（別再升版！）
+- 白天公司那次 `75df490` 把專案從 **net7 升成 net10 卻沒鎖 SDK** → 害「公司能 build、家裡不能」、晚上白耗數小時。
+- 已修正並鎖死：**csproj 退回 net7**、repo 根新增 **`global.json` 釘 SDK 7.0.400**、CLAUDE.md 協作規則第 4 條加「禁止升降版」硬規則。
+- **明天到任何機器：pull 後該機需有 `.NET SDK 7.0.400` + net7 maui-android workload（JDK11 + Android API33）。若某機只有新 SDK(10)，正解是補裝 7.0.400，不是升專案**（新 SDK 會以 NETSDK1202 拒 build net7）。
+- APP build 指令（家裡筆電路徑 `C:\Dev\LoRaPTT` 為純 ASCII，免 junction）：
+  `dotnet build app\LoRaPTT\LoRaPTT.csproj -f net7.0-android -c Debug -p:EmbedAssembliesIntoApk=true`
+
+### 已完成並實機驗證（用 adb 自動驅動 S25 截圖/ logcat 驗收）
+1. **搜尋連發 3 次 PING**（`ChatViewModel.PingAsync`，5 秒窗 t≈0/1.5/3s）→ 連跑 3 輪、每輪都穩定找到 BF8C（logcat 見多筆回覆、依 DeviceId 去重）。**「搜尋時有時無」已解。**
+2. **ChatPage 發送目標列改兩排**：目標 badge 放大佔滿寬度（👤/📡）＋管理靠右；廣播/選擇對象/ID 收下排。純版面、邏輯不動。
+3. **權限白名單**（`.claude/settings.local.json`，gitignore、僅本機）：放行整個 PowerShell + git/rm/ls/grep/tail/cat/dotnet + Edit/Write/Read → build-deploy-test 全自動、免按 allow。
+
+### 本機自動化驗收流程（可重用）
+- 手機 WiFi 已連 `LoRaPTT_CDB8`（192.168.4.2，AP=192.168.4.1）；兩台 CDB8/BF8C 都開著、RSSI 約 −30。
+- 開 App：`adb shell monkey -p com.companyname.loraptt 1`
+- 截圖：`adb shell screencap -p /sdcard/s.png; adb pull /sdcard/s.png`（Blazor WebView 的按鈕 uiautomator 看不到 → 用截圖算座標 `adb shell input tap X Y`，座標用實機 1080×2340）
+- 看 App log：`adb logcat -s DOTNET:*`（tag DOTNET；無網路 WiFi 時別開 NetworkMonitor 洗版）
+- ⚠ 首次裝新版可能跳「16KB ELF 對齊」相容性警告（net7 lib，無害）→ 點「不要再顯示」。
+
+### 待辦（明天起點，依優先序）
+1. **Phase 4 語音 PTT**：唯一大項。需編 **Codec2 native lib（Android arm64-v8a，要 NDK/CMake）** → P/Invoke。這是唯一有「環境步驟」的部分，謹慎做、別讓它變第二次繞環境。`MainViewModel` 的 `Codec2.Decode` 已有 try/catch，僅通話中解碼。
+2. 其餘 UI/UX 續修（PTT 頁、設定頁），同樣用上面的 adb 自動截圖驗收。
+3. （後期）RxDutyCycle 省電（前提：喚醒前導碼加長 ~4000 symbols）。
+4. （後期構想）Meshtastic 互通 App 翻譯橋。
+
+> 明日 08:00 續。pull 到最新 `main`（HEAD=35e4c79 或更新），先讀本節「五」。

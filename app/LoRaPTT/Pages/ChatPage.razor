@@ -21,14 +21,21 @@
 
     <!-- 發送目標列（清楚顯示「現在訊息會送給誰」）-->
     <div class="p-2 border-bottom border-secondary">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
+        <!-- 上排：目前發送目標（醒目）＋ 管理 -->
+        <div class="d-flex align-items-center gap-2 mb-2">
             <span class="small text-muted">發送至</span>
-            <span class="badge @(VM.IsBroadcastTarget ? "bg-warning text-dark" : "bg-info") px-2 py-1"
-                  style="font-size:0.8rem">
-                @(VM.IsBroadcastTarget ? "📡 " : "")@VM.TargetDisplayName
+            <span class="badge @(VM.IsBroadcastTarget ? "bg-warning text-dark" : "bg-info") px-3 py-2 flex-grow-1 text-start text-truncate"
+                  style="font-size:0.95rem">
+                @(VM.IsBroadcastTarget ? "📡 " : "👤 ")@VM.TargetDisplayName
             </span>
+            <button class="btn btn-sm btn-outline-light" @onclick="() => VM.ShowManage = !VM.ShowManage">
+                @(VM.ShowManage ? "收合 ▲" : "管理 ▼")
+            </button>
+        </div>
 
-            <!-- 快速切換按鈕 -->
+        <!-- 下排：切換目標的操作鈕 -->
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <!-- 快速切換廣播 -->
             <button class="btn btn-sm @(VM.IsBroadcastTarget ? "btn-warning" : "btn-outline-secondary")"
                     @onclick='() => VM.TargetHex = "FFFF"'>
                 📡 廣播
@@ -36,7 +43,7 @@
 
             <!-- 從聯絡人/群組選取 -->
             <select class="form-select form-select-sm bg-dark text-white border-secondary"
-                    style="width:auto; max-width:10rem" @onchange="OnPickTarget">
+                    style="width:auto; max-width:11rem" @onchange="OnPickTarget">
                 <option value="">選擇對象...</option>
                 @if (VM.Contacts.Count > 0)
                 {
@@ -61,11 +68,7 @@
 
             <!-- 手動輸入 ID -->
             <input class="form-control form-control-sm bg-dark text-white border-secondary"
-                   style="width:5.5rem" @bind="VM.TargetHex" placeholder="ID 如 A001" />
-
-            <button class="btn btn-sm btn-outline-light ms-auto" @onclick="() => VM.ShowManage = !VM.ShowManage">
-                @(VM.ShowManage ? "收合 ▲" : "管理 ▼")
-            </button>
+                   style="width:6rem" @bind="VM.TargetHex" placeholder="ID A001" />
         </div>
     </div>
 

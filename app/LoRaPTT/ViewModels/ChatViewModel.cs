@@ -180,16 +180,21 @@ public partial class ChatViewModel : ObservableObject
             ScanCountdown = 5;
             Notify();
 
-            await _messaging.SendPingAsync();
             StatusMessage = "正在搜尋附近裝置...";
             Notify();
 
-            // 倒數 5 秒等待回覆
-            for (int i = 5; i > 0; i--)
+            // 5 秒掃描窗內連發 3 次 PING（t≈0 / 1.5 / 3 秒）。
+            // 半雙工下單一回覆偶爾會在碰撞中遺失（時有時無）；多發幾次讓對方有多次
+            // 機會回覆（每次回覆各帶硬體亂數退避），收到任一次即可；重複回覆依
+            // DeviceId 去重（OnDeviceDiscovered），清單只顯示一台。
+            await _messaging.SendPingAsync();        // 第 1 次（t=0）
+            for (int half = 1; half <= 10; half++)   // 10 × 0.5s = 5 秒
             {
-                ScanCountdown = i;
+                await Task.Delay(500);
+                if (half == 3 || half == 6)          // ≈1.5s、3.0s 再各補一次
+                    await _messaging.SendPingAsync();
+                ScanCountdown = (10 - half + 1) / 2; // 近似剩餘秒
                 Notify();
-                await Task.Delay(1000);
             }
 
             ScanCountdown = 0;

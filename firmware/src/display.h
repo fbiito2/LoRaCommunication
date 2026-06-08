@@ -11,6 +11,12 @@ namespace Display {
     void showSosSent();              // SOS 發送確認畫面（F-071）
     void showSosReceived(uint16_t fromId); // 收到 SOS 警報畫面（F-073）
 
+    // POST 自我測試顯示
+    void showPostStep(int step, int total, const char* name);  // 顯示「測試中...」
+    void showPostPass(int step, int total, const char* name);  // 步驟通過
+    void showPostFail(const char* name, int errCode);          // 步驟失敗（含重試提示）
+    void showPostDone(uint16_t deviceId, const char* fwVer);   // 全部通過
+
     // 狀態資料（由各模組更新）
     extern uint16_t deviceId;     // 本機 Device ID（F-001）
     extern String   deviceName;   // 本機暱稱（F-002）

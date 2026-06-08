@@ -33,7 +33,11 @@ static void expWrite(uint8_t reg, uint8_t val) {
 }
 
 // 初始化擴充晶片並釋放/重置 SX1262（P7）、開 RF 開關（P6）
+// 冷開機時延遲加長：擴充晶片 soft reset 50ms、SX1262 reset 脈衝 10ms、
+// 釋放後等 50ms，確保晶片完成內部啟動（原時序在冷開機偶爾不足）。
 static bool initExpanderAndResetRadio() {
+    delay(100); // 冷開機等待 I2C 擴充晶片電源穩定
+
     Wire.end(); // M5.begin 可能已佔用 Wire，先釋放再以正確腳位重啟
     Wire.begin(EXP_I2C_SDA, EXP_I2C_SCL);
     Wire.beginTransmission(EXP_ADDR);
@@ -41,7 +45,7 @@ static bool initExpanderAndResetRadio() {
         Serial.println("[LoRa] 找不到 IO 擴充晶片 0x43");
         return false;
     }
-    expWrite(EXP_REG_RESET,  0xFF);        delay(10);
+    expWrite(EXP_REG_RESET,  0xFF);        delay(50);  // 原 10ms，加長確保 soft reset 完成
     expWrite(EXP_REG_DIR,    0b11000000);  // P6,P7 輸出
     expWrite(EXP_REG_HIZ,    0b00111100);
     expWrite(EXP_REG_PULLSEL,0b11000011);
@@ -51,9 +55,9 @@ static bool initExpanderAndResetRadio() {
 
     // SX1262 reset 脈衝：P7 低→高；同時 P6(RF 開關) 拉高
     expWrite(EXP_REG_OUT, 0b01000000);     // P7=0 (reset), P6=1
-    delay(5);
+    delay(10);                              // 原 5ms，加長確保 reset 訊號穩定
     expWrite(EXP_REG_OUT, 0b11000000);     // P7=1 (release), P6=1
-    delay(10);
+    delay(50);                              // 原 10ms，加長等待 SX1262 完成內部啟動
     return true;
 }
 
@@ -69,13 +73,30 @@ bool LoRaHandler::begin(uint16_t myId) {
     // 設定 SPI 腳位（Unit C6L：SCK20 / MISO22 / MOSI21 / NSS23）
     SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
 
-    // SX1262 初始化：TCXO 由 DIO3 供電 3.0V（不設會晶振不起、begin 失敗）
-    int state = _radio.begin(LORA_FREQ, LORA_BW, LORA_SF, LORA_CR,
+    // SX1262 初始化（含重試：冷開機時晶片可能尚未就緒，最多嘗試 3 次）
+    int state = RADIOLIB_ERR_UNKNOWN;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+            Serial.printf("[LoRa] 重試第 %d 次...\n", attempt);
+            delay(200);
+            // 重新 reset SX1262（不重做整個擴充晶片初始化）
+            expWrite(EXP_REG_OUT, 0b01000000);  // P7=0 (reset), P6=1
+            delay(10);
+            expWrite(EXP_REG_OUT, 0b11000000);  // P7=1 (release), P6=1
+            delay(50);
+        }
+
+        // TCXO 由 DIO3 供電 3.0V（不設會晶振不起、begin 失敗）
+        state = _radio.begin(LORA_FREQ, LORA_BW, LORA_SF, LORA_CR,
                              LORA_SYNC_WORD, LORA_TX_POWER,
                              LORA_PREAMBLE_SHORT, LORA_TCXO_V, false);
-    _lastErr = state;
+        _lastErr = state;
+        if (state == RADIOLIB_ERR_NONE) break;
+        Serial.printf("[LoRa] 初始化失敗（嘗試 %d/3），錯誤碼: %d\n", attempt + 1, state);
+    }
+
     if (state != RADIOLIB_ERR_NONE) {
-        Serial.printf("[LoRa] 初始化失敗，錯誤碼: %d\n", state);
+        Serial.printf("[LoRa] 初始化最終失敗，錯誤碼: %d\n", state);
         return false;
     }
 

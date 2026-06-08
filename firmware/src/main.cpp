@@ -215,6 +215,126 @@ static void onLinkReceived(int idx, const uint8_t* data, size_t len) {
     // 其他類型（含 WiFiCommService 的註冊用空封包）忽略
 }
 
+// ══ POST 自我測試 ══════════════════════════════════════════
+// 開機逐項檢測硬體，OLED 顯示進度 + 蜂鳴器回饋。
+// 任一步驟失敗 → 紅燈 + 錯誤畫面 → 等使用者按鈕重試（不需拔電）。
+static void runPost() {
+    const int TOTAL = 3;
+
+    while (true) { // POST 重試迴圈（按按鈕可重跑）
+        bool allPass = true;
+
+        // ── Step 1/3: I2C 擴充晶片（PI4IOE5V6408, 0x43）──────
+        Display::showPostStep(1, TOTAL, "I2C");
+        delay(500); // 讓使用者看到畫面
+
+        {
+            Wire.end();
+            Wire.begin(10, 8);
+            delay(100); // 冷開機等待擴充晶片電源穩定
+            Wire.beginTransmission(0x43);
+            bool i2cOk = (Wire.endTransmission() == 0);
+
+            if (!i2cOk) {
+                Serial.println("[POST] FAIL: I2C 擴充晶片 0x43 無回應");
+                Display::showPostFail("I2C 0x43", -1);
+                M5.Speaker.tone(400, 800);
+                Led::setError();
+                allPass = false;
+            } else {
+                Serial.println("[POST] PASS: I2C 0x43");
+                Display::showPostPass(1, TOTAL, "I2C");
+                M5.Speaker.tone(2000, 80);
+                Ota::setI2cScan("43");
+                delay(600);
+            }
+        }
+
+        // ── Step 2/3: SX1262 LoRa ────────────────────────────
+        if (allPass) {
+            Display::showPostStep(2, TOTAL, "LoRa");
+            delay(300);
+
+#if ENABLE_LORA
+            Ota::setLoraStatus(false, -1000);
+            _loraOk = loraHandler.begin(_cfg.deviceId);
+            Ota::setLoraStatus(_loraOk, loraHandler.lastError());
+
+            if (!_loraOk) {
+                Serial.printf("[POST] FAIL: LoRa err=%d\n", loraHandler.lastError());
+                Display::showPostFail("LoRa", loraHandler.lastError());
+                M5.Speaker.tone(400, 500);
+                delay(600);
+                M5.Speaker.tone(400, 500);
+                Led::setError();
+                allPass = false;
+            } else {
+                Serial.println("[POST] PASS: LoRa SX1262");
+                Display::showPostPass(2, TOTAL, "LoRa");
+                M5.Speaker.tone(2000, 80);
+                delay(600);
+            }
+#else
+            Serial.println("[POST] SKIP: LoRa 停用（ENABLE_LORA=0）");
+            Display::showPostPass(2, TOTAL, "LoRa OFF");
+            M5.Speaker.tone(2000, 80);
+            delay(600);
+#endif
+        }
+
+        // ── Step 3/3: WiFi AP ────────────────────────────────
+        if (allPass) {
+            Display::showPostStep(3, TOTAL, "WiFi AP");
+            delay(300);
+
+            wifiService.begin();
+            _transports[1] = { &wifiService, false };
+            delay(200); // 等待 AP 啟動
+
+            bool wifiOk = (WiFi.softAPIP() != IPAddress(0, 0, 0, 0));
+            if (!wifiOk) {
+                Serial.println("[POST] FAIL: WiFi AP 啟動失敗");
+                Display::showPostFail("WiFi AP", -1);
+                M5.Speaker.tone(400, 500);
+                delay(600);
+                M5.Speaker.tone(400, 500);
+                Led::setError();
+                allPass = false;
+            } else {
+                Serial.println("[POST] PASS: WiFi AP");
+                Display::showPostPass(3, TOTAL, "WiFi AP");
+                M5.Speaker.tone(2000, 80);
+                delay(600);
+            }
+        }
+
+        // ── 結果判定 ──────────────────────────────────────────
+        if (allPass) {
+            Display::showPostDone(_cfg.deviceId, FW_VERSION);
+            // 開機完成音：嗶嗶兩短聲
+            M5.Speaker.tone(2000, 60);
+            delay(120);
+            M5.Speaker.tone(2000, 60);
+            delay(1500); // 顯示結果畫面 1.5 秒
+            Serial.println("[POST] === 全部通過 ===");
+            return; // POST 通過，繼續 setup 後段
+        }
+
+        // ── 失敗：等使用者按按鈕重試 ────────────────────────
+        Serial.println("[POST] 按使用者按鈕重試...");
+        while (true) {
+            M5.update();
+            if (M5.BtnA.wasPressed()) {
+                M5.Speaker.tone(1000, 100);
+                delay(300); // 消抖
+                break;      // 跳出等待，回到 POST 重試迴圈
+            }
+            delay(10);
+        }
+        Serial.println("[POST] 使用者按下按鈕，重新測試...");
+    } // while(true) POST retry
+}
+
 void setup() {
     // Serial 先起，並加長延遲等待 USB CDC 列舉 + host 連線，確保檢查點不被丟棄
     Serial.begin(115200);
@@ -223,20 +343,8 @@ void setup() {
     auto m5cfg = M5.config();
     M5.begin(m5cfg);
 
-    // ── I2C 掃描（實機除錯：找 PI4IOE5V6408 擴充晶片）──────────
-    {
-        Wire.end();        // M5.begin 可能已佔用 Wire，先釋放再以正確腳位重啟
-        Wire.begin(10, 8); // 預期 SDA=10, SCL=8
-        String found = "";
-        for (uint8_t a = 1; a < 127; a++) {
-            Wire.beginTransmission(a);
-            if (Wire.endTransmission() == 0) {
-                if (found.length()) found += ",";
-                found += String(a, HEX);
-            }
-        }
-        Ota::setI2cScan(found.length() ? found : String("none@10/8"));
-    }
+    // OLED 初始化提前（供 POST 顯示用）
+    Display::init();
 
     Serial.println("=== LoRa PTT Bridge 啟動 ===");
 
@@ -246,12 +354,11 @@ void setup() {
 
     cryptoInit(_cfg.aesKey, _cfg.hmacKey);
 
-    // ── 雙傳輸層同時啟動（無模式切換）──────────────────────
-    // USB Serial CDC（手機 USB-C 直連時可用；純供電則不會送握手）
+    // USB Serial CDC 先啟動（不需測試，不會失敗）
     usbSerialService.begin();
     _transports[0] = { &usbSerialService, false };
 
-    // WiFi AP（預設常開）。SSID 預設帶 Device ID（F-050）
+    // WiFi 參數設定（實際啟動在 POST Step 3）
     if (strcmp(_cfg.wifiSsid, "LoRaPTT") == 0) {
         static char ssidBuf[32];
         snprintf(ssidBuf, sizeof(ssidBuf), "LoRaPTT_%04X", _cfg.deviceId);
@@ -260,8 +367,11 @@ void setup() {
         wifiService.setSsid(_cfg.wifiSsid);
     }
     wifiService.setPassword(_cfg.wifiPass);
-    wifiService.begin();
-    _transports[1] = { &wifiService, false };
+
+    // ══ POST 自我測試（I2C → LoRa → WiFi，失敗停住等按鈕重試）══
+    runPost();
+
+    // ── POST 通過，繼續初始化其餘模組 ─────────────────────────
     _transportCount = 2;
 
     // 韌體 OTA HTTP 伺服器（F-060~064），開在 WiFi AP 上
@@ -271,18 +381,14 @@ void setup() {
     usbSerialService.onReceive([](const uint8_t* d, size_t l) { onLinkReceived(0, d, l); });
     wifiService.onReceive(   [](const uint8_t* d, size_t l) { onLinkReceived(1, d, l); });
 
-    // Display 裝置與網路資訊
+    // Display 裝置與網路資訊（POST 完成後更新為正常頁面資料）
     Display::deviceId   = _cfg.deviceId;
     Display::deviceName = _cfg.deviceName;
     Display::wifiSsid   = WiFi.softAPSSID();
     Display::wifiIp     = WiFi.softAPIP().toString();
 
-    // LoRa（記錄初始化結果，供心跳輸出判斷腳位是否正確）
+    // LoRa 回呼（begin 在 POST 中已完成）
 #if ENABLE_LORA
-    Ota::setLoraStatus(false, -1000); // -1000 = 初始化進行中（若卡死，/version 會停在此值）
-    _loraOk = loraHandler.begin(_cfg.deviceId);
-    Ota::setLoraStatus(_loraOk, loraHandler.lastError());
-    Serial.printf("[Main] LoRa 初始化 %s\n", _loraOk ? "成功" : "失敗");
     loraHandler.setPacketCallback(onLoRaReceived);
 #else
     Serial.println("[Main] LoRa 暫時停用（ENABLE_LORA=0）");
@@ -296,7 +402,6 @@ void setup() {
     PowerMgr::init([](bool en) { loraHandler.setDutyCycle(en); });
 
     // HMI
-    Display::init();
     Led::setBaseWaiting(); // WiFi AP 已開、尚無 APP 握手 → 藍色閃爍
     Button::init();
     Button::onShortPress([]() { Display::nextPage(); });

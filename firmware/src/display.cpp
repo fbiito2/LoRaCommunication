@@ -93,4 +93,48 @@ void showSosReceived(uint16_t fromId) {
     _holdUntil = millis() + 5000; // 強制顯示 5 秒不被覆蓋（接收端 SOS 警示）
 }
 
+// ── POST 自我測試畫面（64×48 OLED）─────────────────────────
+
+void showPostStep(int step, int total, const char* name) {
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.setTextSize(1);
+    M5.Display.setCursor(0, 0);
+    M5.Display.printf("POST %d/%d\n", step, total);
+    M5.Display.println();
+    M5.Display.println(name);
+    M5.Display.println("testing..");
+}
+
+void showPostPass(int step, int total, const char* name) {
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.setTextSize(1);
+    M5.Display.setCursor(0, 0);
+    M5.Display.printf("POST %d/%d\n", step, total);
+    M5.Display.println();
+    M5.Display.printf("%s\n", name);
+    M5.Display.println("  PASS");
+}
+
+void showPostFail(const char* name, int errCode) {
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.setCursor(0, 0);
+    M5.Display.setTextSize(2);
+    M5.Display.println("FAIL");       // 大字醒目（16px 高）
+    M5.Display.setTextSize(1);
+    M5.Display.println(name);
+    M5.Display.printf("err:%d\n", errCode);
+    M5.Display.println("BTN=retry");
+}
+
+void showPostDone(uint16_t devId, const char* fwVer) {
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.setTextSize(1);
+    M5.Display.setCursor(0, 0);
+    M5.Display.println("ALL PASS");
+    M5.Display.println();
+    M5.Display.printf("ID:%04X\n", devId);
+    M5.Display.printf("FW:%s\n", fwVer);
+    M5.Display.println("Ready!");
+}
+
 } // namespace Display

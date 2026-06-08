@@ -78,6 +78,47 @@ public partial class ChatViewModel : ObservableObject
     // 草稿變動 → 通知頁面更新字數
     partial void OnDraftTextChanged(string value) => Notify();
 
+    // 目標變動 → 更新顯示名稱 & 廣播狀態
+    partial void OnTargetHexChanged(string value) => Notify();
+
+    /// <summary>目前是否為廣播模式（目標 FFFF）</summary>
+    public bool IsBroadcastTarget
+        => TargetHex?.Trim().Equals("FFFF", StringComparison.OrdinalIgnoreCase) ?? false;
+
+    /// <summary>目前發送目標的友善顯示名稱</summary>
+    public string TargetDisplayName
+    {
+        get
+        {
+            var t = TargetHex?.Trim().Replace("0x", "", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(t) || t.Equals("FFFF", StringComparison.OrdinalIgnoreCase))
+                return "所有人（廣播）";
+            if (!ushort.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var id))
+                return "無效目標";
+            if (DstId.IsGroup(id))
+            {
+                var g = Groups.FirstOrDefault(x => x.DstId == id);
+                return g?.DisplayName ?? $"群組 0x{t}";
+            }
+            var c = Contacts.FirstOrDefault(x => x.DeviceId == id);
+            return c != null ? c.DisplayName : $"裝置 0x{t}";
+        }
+    }
+
+    /// <summary>從 store 重新讀取暱稱（跨頁同步用：在 Settings 改了暱稱，切回 Chat 時同步）</summary>
+    private bool _syncingNickname;
+    public void SyncNickname()
+    {
+        var saved = _store.LoadNickname("LoRaPTT");
+        if (saved != Nickname)
+        {
+            _syncingNickname = true;
+            Nickname = saved; // 透過 property 設定，觸發 UI 更新
+            _messaging.LocalNickname = saved;
+            _syncingNickname = false;
+        }
+    }
+
     // ── 連線 ────────────────────────────────────────────────
     [RelayCommand]
     private async Task ConnectAsync()
@@ -162,6 +203,7 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>套用暱稱（影響 PING 回覆內容）並持久化</summary>
     partial void OnNicknameChanged(string value)
     {
+        if (_syncingNickname) return; // 同步中不回寫，避免迴圈
         if (!string.IsNullOrWhiteSpace(value))
         {
             _messaging.LocalNickname = value.Trim();
@@ -218,14 +260,18 @@ public partial class ChatViewModel : ObservableObject
         if (existing is null)
         {
             Contacts.Add(contact);
-            StatusMessage = $"發現裝置：{contact.DisplayName}";
+            StatusMessage = $"✅ 發現裝置：{contact.DisplayName}";
         }
         else
         {
             existing.Name = contact.Name;
             existing.LastSeen = contact.LastSeen;
+            existing.LastRssi = contact.LastRssi;
+            StatusMessage = $"更新裝置：{contact.DisplayName}";
         }
         _store.SaveContacts(Contacts);
+        // 自動展開管理面板，讓使用者看到發現的裝置
+        ShowManage = true;
     });
 
     // ── 聯絡人管理（F-003）──────────────────────────────────

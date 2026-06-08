@@ -35,6 +35,7 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string _newGroupName = "";
     [ObservableProperty] private bool _isScanning;             // F-004：正在掃描附近裝置
     [ObservableProperty] private int _scanCountdown;           // 掃描倒數秒
+    [ObservableProperty] private bool _showDiscoveryDialog;    // 探測結果對話框開合
 
     /// <summary>目前草稿的 UTF-8 位元組數（F-013）</summary>
     public int DraftByteCount => Encoding.UTF8.GetByteCount(DraftText ?? "");
@@ -47,6 +48,9 @@ public partial class ChatViewModel : ObservableObject
 
     /// <summary>已知/已發現的聯絡人</summary>
     public ObservableCollection<Contact> Contacts { get; } = new();
+
+    /// <summary>探測結果暫存（不持久化；由使用者在對話框挑選後才加入 Contacts）</summary>
+    public ObservableCollection<Contact> DiscoveredDevices { get; } = new();
 
     /// <summary>群組清單</summary>
     public ObservableCollection<DeviceGroup> Groups { get; } = new();
@@ -170,6 +174,8 @@ public partial class ChatViewModel : ObservableObject
         if (!IsConnected) { StatusMessage = "尚未連線"; Notify(); return; }
         try
         {
+            DiscoveredDevices.Clear();    // 清掉上一輪探測結果
+            ShowDiscoveryDialog = false;
             IsScanning = true;
             ScanCountdown = 5;
             Notify();
@@ -188,7 +194,16 @@ public partial class ChatViewModel : ObservableObject
 
             ScanCountdown = 0;
             IsScanning = false;
-            StatusMessage = "探測完成";
+            // 探測完成 → 跳對話框讓使用者挑選要加入哪些裝置
+            if (DiscoveredDevices.Count > 0)
+            {
+                ShowDiscoveryDialog = true;
+                StatusMessage = $"探測完成，找到 {DiscoveredDevices.Count} 個裝置";
+            }
+            else
+            {
+                StatusMessage = "探測完成，未發現其他裝置";
+            }
             Notify();
         }
         catch (Exception ex)
@@ -256,23 +271,64 @@ public partial class ChatViewModel : ObservableObject
 
     private void OnDeviceDiscovered(Contact contact) => RunOnUi(() =>
     {
-        var existing = Contacts.FirstOrDefault(c => c.DeviceId == contact.DeviceId);
+        // 排除本機自己（韌體已不彈回自身封包，此處再加一道保險）
+        if (_messaging.LocalDeviceId.HasValue && contact.DeviceId == _messaging.LocalDeviceId.Value)
+            return;
+
+        // 放進「探測結果」暫存清單（不直接寫入持久化聯絡人，
+        // 改由使用者在對話框中挑選要加入哪些）
+        var existing = DiscoveredDevices.FirstOrDefault(c => c.DeviceId == contact.DeviceId);
         if (existing is null)
         {
-            Contacts.Add(contact);
-            StatusMessage = $"✅ 發現裝置：{contact.DisplayName}";
+            DiscoveredDevices.Add(contact);
         }
         else
         {
             existing.Name = contact.Name;
             existing.LastSeen = contact.LastSeen;
             existing.LastRssi = contact.LastRssi;
-            StatusMessage = $"更新裝置：{contact.DisplayName}";
+        }
+        StatusMessage = $"✅ 探測到：{contact.DisplayName}";
+    });
+
+    /// <summary>探測結果中的裝置是否已是聯絡人</summary>
+    public bool IsKnownContact(ushort id) => Contacts.Any(c => c.DeviceId == id);
+
+    /// <summary>把探測到的裝置加入聯絡人（持久化）</summary>
+    [RelayCommand]
+    private void AddDiscovered(Contact contact)
+    {
+        if (contact is null) return;
+        var existing = Contacts.FirstOrDefault(c => c.DeviceId == contact.DeviceId);
+        if (existing is null)
+        {
+            Contacts.Add(new Contact
+            {
+                DeviceId = contact.DeviceId,
+                Name = contact.Name,
+                Discovered = true,
+                LastSeen = contact.LastSeen,
+                LastRssi = contact.LastRssi,
+            });
+        }
+        else
+        {
+            existing.Name = contact.Name;
+            existing.LastSeen = contact.LastSeen;
+            existing.LastRssi = contact.LastRssi;
         }
         _store.SaveContacts(Contacts);
-        // 自動展開管理面板，讓使用者看到發現的裝置
-        ShowManage = true;
-    });
+        StatusMessage = $"已新增聯絡人：{contact.DisplayName}";
+        Notify();
+    }
+
+    /// <summary>關閉探測結果對話框</summary>
+    [RelayCommand]
+    private void CloseDiscoveryDialog()
+    {
+        ShowDiscoveryDialog = false;
+        Notify();
+    }
 
     // ── 聯絡人管理（F-003）──────────────────────────────────
     [RelayCommand]
@@ -335,6 +391,8 @@ public partial class ChatViewModel : ObservableObject
     // ── 輔助 ────────────────────────────────────────────────
     private void TouchContact(ushort id, int? rssi)
     {
+        // 排除本機自己（避免把自己加進聯絡人）
+        if (_messaging.LocalDeviceId.HasValue && id == _messaging.LocalDeviceId.Value) return;
         var c = Contacts.FirstOrDefault(x => x.DeviceId == id);
         if (c is null)
         {

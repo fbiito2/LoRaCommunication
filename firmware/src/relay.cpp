@@ -11,6 +11,11 @@ void RelayHandler::init(uint16_t myId, LoRaSendFunc sendFn) {
 }
 
 bool RelayHandler::process(LoRaPacket& pkt) {
+    // 自己發出的封包經他人中繼「原封彈回」→ 整包忽略：
+    // 不回覆探測、不嗶、不轉給 APP、也不再轉發。
+    // 否則廣播會被中繼回音，造成「探測到自己」與「APP 收到自己的廣播」假象。
+    if (pkt.srcId == _myId) return false;
+
     // 是否交給本機 APP：給自己 / 全體廣播 / 群組（群組成員資格由 APP 端判斷）
     bool forMe = (pkt.dstId == _myId) ||
                  dstIsBroadcast(pkt.dstId) ||

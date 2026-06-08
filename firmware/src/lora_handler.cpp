@@ -2,7 +2,7 @@
 #include "crypto.h"
 #include "relay.h"
 #include <SPI.h>
-#include <Wire.h>
+#include <M5Unified.h>
 #include <string.h>
 
 LoRaHandler loraHandler;
@@ -10,54 +10,46 @@ LoRaHandler loraHandler;
 static volatile bool _isrFlag = false;
 static void IRAM_ATTR _loraIsr() { _isrFlag = true; }
 
-// ── PI4IOE5V6408 I2C IO 擴充晶片（Unit C6L：控制 SX1262 RESET/RF 開關）──
-// 依 m5stack/meshtastic-firmware variant.cpp。位址 0x43，I2C SDA=10 / SCL=8。
+// ── 透過 M5Unified IO 擴充晶片 API 控制 SX1262 ──────────────────
+// 不使用 Arduino Wire（Wire.end/begin 會破壞 M5Unified 的 In_I2C，導致按鈕失效）。
+// 做完整 soft reset + 暫存器重配，確保冷開機時擴充晶片處於正確狀態。
 //   P7 = SX1262 NRST、P6 = RF 天線開關、P5 = LNA、P0/P1 = 按鈕
-#define EXP_ADDR        0x43
-#define EXP_I2C_SDA     10
-#define EXP_I2C_SCL     8
-#define EXP_REG_DIR     0x03  // IO 方向（1=輸出）
-#define EXP_REG_OUT     0x05  // 輸出設定
-#define EXP_REG_HIZ     0x07  // 高阻抗模式
-#define EXP_REG_PULLEN  0x0B  // 上下拉致能
-#define EXP_REG_PULLSEL 0x0D  // 上下拉選擇
-#define EXP_REG_INDEF   0x09  // 輸入預設
-#define EXP_REG_IRQMASK 0x11  // 中斷遮罩
-#define EXP_REG_IRQ     0x13  // IRQ 狀態
-#define EXP_REG_RESET   0x01  // 晶片重置
-
-static void expWrite(uint8_t reg, uint8_t val) {
-    Wire.beginTransmission(EXP_ADDR);
-    Wire.write(reg); Wire.write(val);
-    Wire.endTransmission();
-}
-
-// 初始化擴充晶片並釋放/重置 SX1262（P7）、開 RF 開關（P6）
-// 冷開機時延遲加長：擴充晶片 soft reset 50ms、SX1262 reset 脈衝 10ms、
-// 釋放後等 50ms，確保晶片完成內部啟動（原時序在冷開機偶爾不足）。
 static bool initExpanderAndResetRadio() {
     delay(100); // 冷開機等待 I2C 擴充晶片電源穩定
 
-    Wire.end(); // M5.begin 可能已佔用 Wire，先釋放再以正確腳位重啟
-    Wire.begin(EXP_I2C_SDA, EXP_I2C_SCL);
-    Wire.beginTransmission(EXP_ADDR);
-    if (Wire.endTransmission() != 0) {
-        Serial.println("[LoRa] 找不到 IO 擴充晶片 0x43");
+    // 檢查 M5Unified 是否正確偵測為 UnitC6L（否則 _io_expander[0] 不存在會崩潰）
+    if (M5.getBoard() != m5::board_t::board_M5UnitC6L) {
+        Serial.println("[LoRa] 板型非 UnitC6L，無法存取 IO 擴充晶片");
         return false;
     }
-    expWrite(EXP_REG_RESET,  0xFF);        delay(50);  // 原 10ms，加長確保 soft reset 完成
-    expWrite(EXP_REG_DIR,    0b11000000);  // P6,P7 輸出
-    expWrite(EXP_REG_HIZ,    0b00111100);
-    expWrite(EXP_REG_PULLSEL,0b11000011);
-    expWrite(EXP_REG_PULLEN, 0b11000011);
-    expWrite(EXP_REG_INDEF,  0b00000011);
-    expWrite(EXP_REG_IRQMASK,0b11111100);
 
-    // SX1262 reset 脈衝：P7 低→高；同時 P6(RF 開關) 拉高
-    expWrite(EXP_REG_OUT, 0b01000000);     // P7=0 (reset), P6=1
-    delay(10);                              // 原 5ms，加長確保 reset 訊號穩定
-    expWrite(EXP_REG_OUT, 0b11000000);     // P7=1 (release), P6=1
-    delay(50);                              // 原 10ms，加長等待 SX1262 完成內部啟動
+    auto& ioexp = M5.getIOExpander(0);
+
+    // 驗證擴充晶片可存取（讀取裝置 ID 暫存器，回傳非 0 表示晶片存在）
+    uint8_t devId = ioexp.readRegister8(0x01);
+    if (devId == 0) {
+        Serial.println("[LoRa] IO 擴充晶片 0x43 無回應");
+        return false;
+    }
+
+    // Soft reset 擴充晶片（確保乾淨狀態，冷開機 Power_Class 可能寫入時晶片尚未就緒）
+    ioexp.writeRegister8(0x01, 0xFF);
+    delay(50);
+
+    // 重新配置暫存器（soft reset 後全歸預設值）
+    // 與 M5Unified Power_Class reg_data_array_for_lorac6 一致
+    ioexp.writeRegister8(0x03, 0b11100000);  // DIR: P5,P6,P7 output
+    ioexp.writeRegister8(0x07, 0b00011100);  // HIZ: P2,P3,P4 high-impedance
+    ioexp.writeRegister8(0x0D, 0b11000011);  // PULLSEL: P0,P1,P6,P7 pull-up
+    ioexp.writeRegister8(0x0B, 0b11000011);  // PULLEN: P0,P1,P6,P7 pull enabled
+    ioexp.writeRegister8(0x09, 0b00000011);  // INDEF: P0,P1 default state
+    ioexp.writeRegister8(0x11, 0b11111100);  // IRQMASK: only P0,P1 interrupt
+
+    // SX1262 reset 脈衝：DIR 設完時 OUT 預設 0x00 → P7 已為 0（reset）
+    ioexp.writeRegister8(0x05, 0b01000000);  // P6=1 RF 開關, P7=0 維持 reset
+    delay(10);
+    ioexp.writeRegister8(0x05, 0b11000000);  // P6=1, P7=1 釋放 SX1262
+    delay(50);
     return true;
 }
 
@@ -79,11 +71,10 @@ bool LoRaHandler::begin(uint16_t myId) {
         if (attempt > 0) {
             Serial.printf("[LoRa] 重試第 %d 次...\n", attempt);
             delay(200);
-            // 重新 reset SX1262（不重做整個擴充晶片初始化）
-            expWrite(EXP_REG_OUT, 0b01000000);  // P7=0 (reset), P6=1
-            delay(10);
-            expWrite(EXP_REG_OUT, 0b11000000);  // P7=1 (release), P6=1
-            delay(50);
+            // 重新 reset SX1262（透過 M5Unified IO 擴充晶片 API）
+            auto& ioexp = M5.getIOExpander(0);
+            ioexp.writeRegister8(0x05, 0b01000000);  delay(10);  // P7=0 reset
+            ioexp.writeRegister8(0x05, 0b11000000);  delay(50);  // P7=1 release
         }
 
         // TCXO 由 DIO3 供電 3.0V（不設會晶振不起、begin 失敗）

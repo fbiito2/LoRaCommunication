@@ -175,6 +175,52 @@
         </div>
     }
 
+    <!-- 探測結果對話框（搜尋附近裝置完成後跳出，讓使用者挑選加入聯絡人）-->
+    @if (VM.ShowDiscoveryDialog)
+    {
+        <div class="discovery-overlay" @onclick="CloseDiscovery">
+            <div class="discovery-dialog bg-dark text-white border border-secondary rounded p-3"
+                 @onclick:stopPropagation="true">
+                <div class="d-flex align-items-center mb-2">
+                    <h6 class="mb-0 flex-grow-1">🔍 探測到的裝置（@VM.DiscoveredDevices.Count）</h6>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseDiscovery"></button>
+                </div>
+                @if (VM.DiscoveredDevices.Count == 0)
+                {
+                    <p class="text-muted small mb-0">未發現其他裝置</p>
+                }
+                else
+                {
+                    <p class="text-muted small mb-2">挑選要加入聯絡人的裝置：</p>
+                    @foreach (var d in VM.DiscoveredDevices)
+                    {
+                        var known = VM.IsKnownContact(d.DeviceId);
+                        <div class="d-flex align-items-center gap-2 mb-2 pb-2 border-bottom border-secondary">
+                            <span class="flex-grow-1 text-truncate">
+                                @d.DisplayName <span class="text-muted">(@d.IdHex)</span>
+                                @if (d.LastRssi.HasValue)
+                                {
+                                    <span class="text-white-50 ms-1" style="font-size:0.7rem">@(d.LastRssi)dBm</span>
+                                }
+                            </span>
+                            @if (known)
+                            {
+                                <span class="badge bg-success">已加入</span>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-success py-0" @onclick="() => AddDiscovered(d)">新增</button>
+                            }
+                        </div>
+                    }
+                }
+                <div class="text-end mt-2">
+                    <button class="btn btn-sm btn-outline-light" @onclick="CloseDiscovery">關閉</button>
+                </div>
+            </div>
+        </div>
+    }
+
     <!-- 訊息列表 -->
     <div class="flex-grow-1 overflow-auto p-2" id="msg-list">
         @if (VM.Messages.Count == 0)
@@ -260,6 +306,23 @@
         border-radius: 12px;
         word-break: break-word;
     }
+
+    .discovery-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1050;
+    }
+
+    .discovery-dialog {
+        width: 90%;
+        max-width: 420px;
+        max-height: 80vh;
+        overflow: auto;
+    }
 </style>
 
 @code {
@@ -280,6 +343,8 @@
     private async Task Ping()    => await VM.PingCommand.ExecuteAsync(null);
     private void AddContact()    => VM.AddContactCommand.Execute(null);
     private void CreateGroup()   => VM.CreateGroupCommand.Execute(null);
+    private void AddDiscovered(Contact c) => VM.AddDiscoveredCommand.Execute(c);
+    private void CloseDiscovery()         => VM.CloseDiscoveryDialogCommand.Execute(null);
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {

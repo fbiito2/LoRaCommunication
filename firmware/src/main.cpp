@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <Wire.h>
 #include <esp_ota_ops.h>  // F-063：OTA rollback 支援
+#include <esp_random.h>   // 硬體亂數（PING 回覆隨機退避用）
 #include "config.h"
 #include "crypto.h"
 #include "comm_interface.h"
@@ -93,6 +93,13 @@ static void sendSos() {
 
 // ── PING 回覆（F-004：廣播探測發現裝置）─────────────────────
 static void replyPing(const LoRaPacket& pingPkt) {
+    // 隨機退避 30~150ms：避免回覆與「轉發回音」背靠背碰撞——接收端抓到回音後
+    // 正忙著處理/透過 WiFi 推給 APP（短暫離開接收），緊接而來的回覆會被漏掉。
+    // 退避讓接收端先處理完回音、回到接收狀態，再收回覆；多節點時也錯開彼此回覆。
+    // 用硬體亂數 esp_random()，確保每台/每次退避都不同（一般 random() 無種子各台
+    // 會挑到相同延遲、照樣互撞）。
+    delay(30 + (esp_random() % 120));
+
     LoRaPacket reply = {};
     reply.dstId      = pingPkt.srcId; // 回覆給發送 PING 的人
     reply.type       = PKT_TYPE_PING;
@@ -229,11 +236,15 @@ static void runPost() {
         delay(500); // 讓使用者看到畫面
 
         {
-            Wire.end();
-            Wire.begin(10, 8);
-            delay(100); // 冷開機等待擴充晶片電源穩定
-            Wire.beginTransmission(0x43);
-            bool i2cOk = (Wire.endTransmission() == 0);
+            // 透過 M5Unified IO 擴充晶片 API 驗證（不使用 Wire，避免破壞 In_I2C 導致按鈕失效）
+            bool i2cOk = false;
+            if (M5.getBoard() != m5::board_t::board_M5UnitC6L) {
+                Serial.println("[POST] FAIL: 板型非 UnitC6L（IO 擴充晶片不可用）");
+            } else {
+                auto& ioexp = M5.getIOExpander(0);
+                uint8_t devId = ioexp.readRegister8(0x01);
+                i2cOk = (devId != 0);
+            }
 
             if (!i2cOk) {
                 Serial.println("[POST] FAIL: I2C 擴充晶片 0x43 無回應");
@@ -338,6 +349,10 @@ static void runPost() {
 void setup() {
     // Serial 先起，並加長延遲等待 USB CDC 列舉 + host 連線，確保檢查點不被丟棄
     Serial.begin(115200);
+    // HWCDC：無 host 讀取時直接丟棄輸出，不阻塞主迴圈。
+    // 否則 USB 插著供電但沒程式讀序列埠時，TX 緩衝區塞滿會卡死 loop，
+    // 導致按鈕漏抓、OLED 不重繪、WiFi/HTTP 反應遲緩。
+    Serial.setTxTimeoutMs(0);
     delay(2000);
     // M5Unified 初始化（電源/I2C/OLED/按鈕/蜂鳴器）——須在使用 M5.* 前呼叫
     auto m5cfg = M5.config();
@@ -457,6 +472,20 @@ void loop() {
     Display::loop();
     Button::loop();
     Led::loop();
+
+    // 按鈕偵錯：每次 loop 更新 IO 擴充晶片原始值 + 邊緣事件計數供 /version HTTP 查看
+    {
+        static uint32_t _dbgCnt = 0;
+        _dbgCnt++;
+        if (M5.getBoard() == m5::board_t::board_M5UnitC6L) {
+            uint8_t reg = M5.getIOExpander(0).readRegister8(0x0F);
+            Ota::setBtnDebug((int)M5.getBoard(), reg, M5.BtnA.isPressed(), _dbgCnt);
+        } else {
+            Ota::setBtnDebug((int)M5.getBoard(), 0xFF, false, _dbgCnt);
+        }
+        auto bi = Button::getDebugInfo();
+        Ota::setBtnEdgeDebug(bi.wasPressedCnt, bi.wasReleasedCnt, bi.shortCbCnt, bi.tripleCbCnt, bi.tapCount, bi.pressing);
+    }
 
 #if ENABLE_LORA && LORA_TEST_BEACON
     // 測試：每 3 秒自動廣播一個 beacon，供雙機 LoRa 收發驗證

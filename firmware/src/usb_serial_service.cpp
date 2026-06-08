@@ -6,6 +6,7 @@ void UsbSerialService::begin() {
     // USB CDC 由 build_flags 的 ARDUINO_USB_CDC_ON_BOOT=1 自動啟動
     // Serial 即為 USB CDC，無需額外初始化
     Serial.begin(115200);
+    Serial.setTxTimeoutMs(0); // 再次確保（Serial.begin 可能重置逾時設定）
     Serial.println("[USB] USB Serial CDC 已啟動");
 }
 

@@ -18,6 +18,12 @@ static uint32_t  _lastTapMs = 0;       // 上次短按放開時間
 static const uint32_t TAP_WINDOW = 800; // 連擊判定窗口（ms）
 static const int TAP_TARGET = 3;        // 連按目標次數
 
+// 偵錯計數器
+static uint32_t _dbgWasPressed  = 0;
+static uint32_t _dbgWasReleased = 0;
+static uint32_t _dbgShortCb     = 0;
+static uint32_t _dbgTripleCb    = 0;
+
 static const uint32_t LONG_MS      = 3000;
 static const uint32_t VERY_LONG_MS = 6000;
 
@@ -32,6 +38,7 @@ void loop() {
     M5.update(); // 必須在 loop 呼叫，M5Unified 更新按鈕狀態
 
     if (M5.BtnA.wasPressed()) {
+        _dbgWasPressed++;
         _pressMs  = millis();
         _pressing = true;
         _beep3    = false;
@@ -47,6 +54,7 @@ void loop() {
 
     // 放開時依「按住時長」判定動作
     if (M5.BtnA.wasReleased() && _pressing) {
+        _dbgWasReleased++;
         uint32_t held = millis() - _pressMs;
         _pressing = false;
         if (held >= VERY_LONG_MS) {
@@ -67,6 +75,7 @@ void loop() {
             if (_tapCount >= TAP_TARGET) {
                 // 連按 3 下 → SOS（F-071）
                 _tapCount = 0;
+                _dbgTripleCb++;
                 if (_tripleCb) _tripleCb();
             }
             // 注意：不在此處立即觸發 shortCb，需等連擊窗口逾時才確認是普通短按
@@ -75,9 +84,21 @@ void loop() {
 
     // 連擊窗口逾時：確認為普通短按（1 或 2 下皆視為短按）
     if (_tapCount > 0 && !_pressing && (millis() - _lastTapMs > TAP_WINDOW)) {
+        _dbgShortCb++;
         if (_shortCb) _shortCb();
         _tapCount = 0;
     }
+}
+
+DebugInfo getDebugInfo() {
+    return {
+        _dbgWasPressed,
+        _dbgWasReleased,
+        _dbgShortCb,
+        _dbgTripleCb,
+        _tapCount,
+        _pressing
+    };
 }
 
 } // namespace Button

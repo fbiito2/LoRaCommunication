@@ -15,6 +15,8 @@ namespace Ota {
     void setI2cScan(const String& s);      // 供 /version 回報 I2C 掃描結果（實機除錯）
     void setRxStats(uint32_t count, int rssi, uint16_t src); // LoRa 收訊統計（雙機測試）
     void setTxStats(uint32_t count, bool ok);                // LoRa 發射統計（雙機測試）
+    void setBtnDebug(int board, uint8_t reg0F, bool btnPressed, uint32_t loopCnt); // 按鈕偵錯
+    void setBtnEdgeDebug(uint32_t wpCnt, uint32_t wrCnt, uint32_t scCnt, uint32_t tcCnt, int tapCnt, bool pressing); // 邊緣事件偵錯
     bool isActive();                   // 更新進行中
     int  progress();                   // 0~100
 }

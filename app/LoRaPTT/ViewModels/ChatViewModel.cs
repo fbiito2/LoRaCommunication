@@ -71,6 +71,7 @@ public partial class ChatViewModel : ObservableObject
         _messaging.AckReceived += OnAckReceived;
         _messaging.DeviceDiscovered += OnDeviceDiscovered;
         _messaging.HandshakeCompleted += OnHandshakeCompleted;
+        _messaging.SosReceived += OnSosReceived; // A：收到 SOS 也寫進文字訊息
 
         // 載入持久化的暱稱/聯絡人/群組
         Nickname = _store.LoadNickname(_messaging.LocalNickname);
@@ -256,6 +257,33 @@ public partial class ChatViewModel : ObservableObject
         }
         Messages.Add(msg);
         TouchContact(msg.PeerId, msg.Rssi);
+    });
+
+    // A：收到 SOS（F-073）→ 在聊天室也插一則醒目訊息，含求救者 ID 與定位（有的話）
+    // payload：[DeviceID 2B][Lat 8B][Lon 8B][附加文字 NB]；C6L 實體按鈕求救僅 2B(無 GPS)
+    private void OnSosReceived(ushort srcId, byte[] payload) => RunOnUi(() =>
+    {
+        double lat = 0, lon = 0; string extra = "";
+        if (payload.Length >= 18)
+        {
+            lat = BitConverter.ToDouble(payload, 2);
+            lon = BitConverter.ToDouble(payload, 10);
+            if (payload.Length > 18)
+                extra = Encoding.UTF8.GetString(payload, 18, payload.Length - 18);
+        }
+        bool hasGps = lat != 0 || lon != 0;
+        var text = $"🆘 SOS 緊急求救　來自 0x{srcId:X4}"
+                 + (hasGps ? $"\n📍 定位：{lat:F6}, {lon:F6}" : "\n📍 無定位")
+                 + (string.IsNullOrWhiteSpace(extra) ? "" : $"\n💬 {extra}");
+        Messages.Add(new ChatMessage
+        {
+            Direction = MessageDirection.Incoming,
+            PeerId = srcId,
+            DstId = DstId.Broadcast,
+            Text = text,
+            Status = MessageStatus.Received,
+        });
+        TouchContact(srcId, null);
     });
 
     private void OnAckReceived(ushort responderId, ushort ackedSeq) => RunOnUi(() =>

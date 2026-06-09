@@ -363,7 +363,8 @@
     private void OnPickTarget(ChangeEventArgs e)
     {
         var v = e.Value?.ToString();
-        if (!string.IsNullOrEmpty(v)) VM.TargetHex = v;
+        // 選回「選擇對象...」(空值) → 視為廣播；否則設為該對象
+        VM.TargetHex = string.IsNullOrEmpty(v) ? "FFFF" : v;
     }
 
     private static string StatusIcon(MessageStatus s) => s switch

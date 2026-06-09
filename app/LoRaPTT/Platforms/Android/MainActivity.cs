@@ -29,10 +29,11 @@ public class MainActivity : MauiAppCompatActivity
     {
         public WindowInsetsCompat OnApplyWindowInsets(Android.Views.View v, WindowInsetsCompat insets)
         {
-            var ime = insets.GetInsets(WindowInsetsCompat.Type.Ime());
-            var nav = insets.GetInsets(WindowInsetsCompat.Type.SystemBars());
-            v.SetPadding(v.PaddingLeft, v.PaddingTop, v.PaddingRight, System.Math.Max(ime.Bottom, nav.Bottom));
-            return insets;
+            var ime  = insets.GetInsets(WindowInsetsCompat.Type.Ime());
+            var bars = insets.GetInsets(WindowInsetsCompat.Type.SystemBars());
+            // 上=狀態列、左右=系統列、底=max(鍵盤, 導覽列)；確保所有內容都在安全區內、不被裁切
+            v.SetPadding(bars.Left, bars.Top, bars.Right, System.Math.Max(ime.Bottom, bars.Bottom));
+            return WindowInsetsCompat.Consumed; // 已處理，避免子視圖重複套用
         }
     }
 

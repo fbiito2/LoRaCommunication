@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net7.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LoRaPTT.PcClient</RootNamespace>
+    <AssemblyName>LoRaPTT.PcClient</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Ports" Version="7.0.0" />
+  </ItemGroup>
+
+  <!-- 重用 MAUI App 的協定碼（link，不複製）；之後可抽成共用 lib -->
+  <ItemGroup>
+    <Compile Include="..\app\LoRaPTT\Services\Protocol\*.cs"
+             Link="Protocol\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

@@ -1,6 +1,7 @@
 #include "lora_handler.h"
 #include "crypto.h"
 #include "relay.h"
+#include "debug_log.h"
 #include <SPI.h>
 #include <M5Unified.h>
 #include <string.h>
@@ -188,6 +189,7 @@ void LoRaHandler::loop() {
     }
 
     int16_t rssi = (int16_t)lroundf(_radio.getRSSI());
+    if (!g_usbDataMode)
     Serial.printf("[LoRa] 收到封包 SRC=0x%04X DST=0x%04X SEQ=%d RSSI=%d\n",
                   pkt.srcId, pkt.dstId, pkt.seq, rssi);
 

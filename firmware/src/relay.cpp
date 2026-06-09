@@ -1,4 +1,5 @@
 #include "relay.h"
+#include "debug_log.h"
 #include <string.h>
 
 RelayHandler relayHandler;
@@ -23,7 +24,7 @@ bool RelayHandler::process(LoRaPacket& pkt) {
 
     // 去重檢查：避免重複處理或迴圈轉發
     if (_isDuplicate(pkt.srcId, pkt.seq)) {
-        Serial.printf("[Relay] 重複封包丟棄 SRC=0x%04X SEQ=%d\n",
+        if (!g_usbDataMode) Serial.printf("[Relay] 重複封包丟棄 SRC=0x%04X SEQ=%d\n",
                       pkt.srcId, pkt.seq);
         return false;
     }
@@ -42,7 +43,7 @@ bool RelayHandler::process(LoRaPacket& pkt) {
         if (len > 0) {
             _sendFn(buf, len);
             _forwardCount++;
-            Serial.printf("[Relay] 轉發封包 SRC=0x%04X DST=0x%04X HOP=%d\n",
+            if (!g_usbDataMode) Serial.printf("[Relay] 轉發封包 SRC=0x%04X DST=0x%04X HOP=%d\n",
                           pkt.srcId, pkt.dstId, pkt.hop);
         }
     }

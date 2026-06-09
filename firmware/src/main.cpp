@@ -14,6 +14,10 @@
 #include "button.h"
 #include "led.h"
 #include "ota_service.h"
+#include "debug_log.h"
+
+// USB CDC 作為資料通道時抑制除錯 log（見 debug_log.h）
+volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
 #define FW_VERSION "0.4.0"
@@ -127,7 +131,7 @@ static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
 
     // F-073：收到 SOS → 全節點警報（不管有沒有接手機）
     if (pkt.type == PKT_TYPE_SOS) {
-        Serial.printf("[SOS] 收到求救！來自 0x%04X\n", pkt.srcId);
+        if (!g_usbDataMode) Serial.printf("[SOS] 收到求救！來自 0x%04X\n", pkt.srcId);
         M5.Speaker.tone(800, 3000); // Buzzer 連續長響 3 秒
         Led::setSosAlert();          // RGB LED 紅色快閃
         Display::showSosReceived(pkt.srcId);
@@ -462,6 +466,7 @@ void loop() {
 
     // 更新 OLED 統計與 APP 連線狀態
     bool u = _transports[0].hasApp, w = _transports[1].hasApp;
+    g_usbDataMode = u; // USB 有 APP 握手 → CDC 為資料通道 → 抑制除錯 log
     Display::appStatus  = (u && w) ? "USB+WiFi" : u ? "USB" : w ? "WiFi" : "none";
     Display::relayCount = relayHandler.forwardCount();
 
@@ -510,6 +515,7 @@ void loop() {
     static uint32_t _hbMs = 0;
     if (millis() - _hbMs >= 2000) {
         _hbMs = millis();
+        if (!g_usbDataMode)
         Serial.printf("[HB] up=%lus id=0x%04X fw=%s loraOk=%d apIP=%s app=USB%d/WiFi%d rx=%lu tx=%lu fwd=%lu\n",
                       (unsigned long)(millis() / 1000), _cfg.deviceId, FW_VERSION, _loraOk ? 1 : 0,
                       WiFi.softAPIP().toString().c_str(),

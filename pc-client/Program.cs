@@ -50,14 +50,23 @@ void SendFrame(byte[] link)
     port.Write(f, 0, f.Length);
 }
 
-void ReadExact(byte[] buf, int count)
+// 從累積緩衝抽出完整幀；遇到混入的 log 文字會自動重同步（丟 1 byte 再試）。
+// 合法幀判定：長度 1~255 且首位元組為 LinkFrame.Data(0x01)/Ctrl(0x02)。
+void DrainFrames(List<byte> acc)
 {
-    int got = 0;
-    while (got < count)
+    while (acc.Count >= 3)
     {
-        int n = port.Read(buf, got, count - got);
-        if (n <= 0) throw new EndOfStreamException();
-        got += n;
+        int len = (acc[0] << 8) | acc[1];
+        byte type = acc[2];
+        if (len < 1 || len > 255 || (type != LinkFrame.Data && type != LinkFrame.Ctrl))
+        {
+            acc.RemoveAt(0); // 雜訊 → 重同步
+            continue;
+        }
+        if (acc.Count < 2 + len) break; // 等更多資料
+        var frame = acc.GetRange(2, len).ToArray();
+        acc.RemoveRange(0, 2 + len);
+        HandleFrame(frame);
     }
 }
 
@@ -88,20 +97,19 @@ void HandleFrame(byte[] frame)
     }
 }
 
-// 讀取執行緒：解析 [len][LinkFrame]
+// 讀取執行緒：累積位元組 → DrainFrames 抽幀（容忍混入的 log 文字）
 var reader = new Thread(() =>
 {
-    var two = new byte[2];
+    var acc = new List<byte>(1024);
+    var tmp = new byte[256];
     try
     {
         while (port.IsOpen)
         {
-            ReadExact(two, 2);
-            int len = (two[0] << 8) | two[1];
-            if (len <= 0 || len > 512) continue; // 長度異常，略過（陽春重同步）
-            var data = new byte[len];
-            ReadExact(data, len);
-            HandleFrame(data);
+            int n = port.Read(tmp, 0, tmp.Length);
+            if (n <= 0) continue;
+            for (int i = 0; i < n; i++) acc.Add(tmp[i]);
+            DrainFrames(acc);
         }
     }
     catch (Exception ex) { Console.WriteLine("\n讀取結束：" + ex.Message); }

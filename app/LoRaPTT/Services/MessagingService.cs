@@ -80,6 +80,8 @@ public sealed class MessagingService : IMessagingService
             Type = PacketType.Text,
             Payload = payload,
         };
+        // 序列化一次後重複送同一份位元組（同 SEQ）。
+        var wire = LinkFrame.WrapData(PacketCodec.Serialize(pkt));
 
         var msg = new ChatMessage
         {
@@ -91,9 +93,18 @@ public sealed class MessagingService : IMessagingService
             Status = DstId.IsUnicast(dstId) ? MessageStatus.Sending : MessageStatus.Sent,
         };
 
+        // 單發 LoRa 封包在半雙工下會間歇遺失（實測結論：送 3 次才穩）。
+        // 廣播/群組無 ACK → 重送 3 次（間隔 200ms）；接收端依 SRC+SEQ 去重，
+        // 同一則只顯示一次（韌體中繼快取與 APP _dedup 皆以 SRC+SEQ 為鍵）。
+        // 點對點有 ACK 重傳機制，維持單發。
+        int sends = DstId.IsUnicast(dstId) ? 1 : 3;
         try
         {
-            await _comm.SendAsync(LinkFrame.WrapData(PacketCodec.Serialize(pkt)), ct);
+            for (int i = 0; i < sends; i++)
+            {
+                await _comm.SendAsync(wire, ct);
+                if (i < sends - 1) await Task.Delay(200, ct);
+            }
         }
         catch (Exception ex)
         {

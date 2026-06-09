@@ -29,6 +29,12 @@ ushort dst = 0xFFFF;
 foreach (var a in args)
     if (a.Length == 4 && ushort.TryParse(a, NumberStyles.HexNumber, null, out var d)) dst = d;
 
+// 非互動測試用：send:<文字> 握手後送一則；secs:<N> probe 監聽秒數（預設 8）
+string? sendText = args.FirstOrDefault(a => a.StartsWith("send:", StringComparison.OrdinalIgnoreCase))?[5..];
+int listenSecs = 8;
+var secsArg = args.FirstOrDefault(a => a.StartsWith("secs:", StringComparison.OrdinalIgnoreCase));
+if (secsArg != null && int.TryParse(secsArg[5..], out var ls)) listenSecs = ls;
+
 int seqCounter = 0;
 ushort NextSeq() => (ushort)(Interlocked.Increment(ref seqCounter) & 0xFFFF);
 
@@ -145,7 +151,17 @@ Console.WriteLine("→ 已送出握手 hello");
 
 if (probe)
 {
-    Thread.Sleep(8000);
+    if (sendText != null)
+    {
+        for (int k = 0; k < 3; k++) // 送 3 次（不同 SEQ）避免單發 LoRa 遺失
+        {
+            var p = new LoRaPacket { DstId = dst, Seq = NextSeq(), Type = PacketType.Text, Payload = Encoding.UTF8.GetBytes(sendText) };
+            sendLink(LinkFrame.WrapData(PacketCodec.Serialize(p)));
+            Console.WriteLine($"→ 送出至 0x{dst:X4}：{sendText} (#{k + 1})");
+            Thread.Sleep(800);
+        }
+    }
+    Thread.Sleep(listenSecs * 1000);
     shutdown();
     Console.WriteLine("probe 結束。");
     return;

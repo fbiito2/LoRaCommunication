@@ -160,3 +160,18 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
 - **A**：收到 SOS → 聊天室插「🆘 來自 0xXXXX + 定位(有的話) + 附加文字」（`ChatViewModel.OnSosReceived`）。✅
 - **B**：`AndroidManifest` 補 `ACCESS_COARSE/FINE_LOCATION`（修 SOS 頁定位失敗，定位權限正常）。✅
 - 仍待辦：群組/點對點/OTA 補實機驗證、F-051 設定頁、Phase 4 語音。
+
+---
+
+## 七、2026-06-09 PC 客戶端 + 雙向實測通過
+
+- **PC 客戶端走 WiFi**（`pc-client/`，net7 console，重用協定碼）。USB CDC 在原生 HWCDC 上對會開埠的 host 不穩 → **改 WiFi（與手機同通道，穩定）**。
+  - 用法：PC 的 WiFi 先連目標 C6L 的 AP，再 `dotnet run --project pc-client -- wifi 192.168.4.1 FFFF`。
+  - 測試參數：`send:<文字>`（送 3 次避單發遺失）、`secs:<N>`（probe 監聽秒數）、`probe`（非互動）。
+  - netsh 連 AP：建 WLAN profile（WPA2PSK, key `loraptt2026`）→ `netsh wlan connect name=LoRaPTT_BF8C`。
+- **雙向實測通過**（手機 CDB8 ↔ PC BF8C，PC 當第二端點，解掉單手機死結）：
+  - PC→手機：手機聊天室顯示「0xBF8C 廣播 PC2Phone」✅
+  - 手機→PC：PC 印出 3× `[0xCDB8→0xFFFF] PING`（RSSI -33）✅
+- **關鍵結論**：**單發 LoRa 封包會間歇遺失，送 3 次才穩**（廣播文字/PING 皆然）。
+  → 待辦：**廣播/群組文字也應比照探測，送多次或加重送機制**（目前 APP 廣播文字仍單發，會偶爾掉）。
+- 共用核心 lib 尚未正式抽出（PC 端目前用 `<Compile Link>` 重用 Protocol 檔）；之後可抽 `LoRaPTT.Core`。

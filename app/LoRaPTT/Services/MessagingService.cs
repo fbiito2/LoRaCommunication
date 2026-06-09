@@ -231,6 +231,7 @@ public sealed class MessagingService : IMessagingService
             return;
         }
         ushort ackedSeq = (ushort)((pkt.Payload[0] << 8) | pkt.Payload[1]);
+        Console.WriteLine($"LPTT: 收到 ACK 封包 from=0x{pkt.SrcId:X4} ackedSeq={ackedSeq}");
         AckReceived?.Invoke(pkt.SrcId, ackedSeq);
     }
 

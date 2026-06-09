@@ -4,6 +4,7 @@ using Android.Content.PM;
 using Android.Net;
 using Android.OS;
 using Android.Views;
+using AndroidX.Core.View;
 
 namespace LoRaPTT;
 
@@ -14,7 +15,25 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        // 邊到邊 + 手動處理 IME（鍵盤）inset：鍵盤彈出時把內容底部往上推，輸入框不被蓋住。
+        // （Android 15 下 windowSoftInputMode=adjustResize / visualViewport 都失效，這才是正解）
+        Window?.SetDecorFitsSystemWindows(false);
+        var content = FindViewById(Android.Resource.Id.Content);
+        if (content != null)
+            ViewCompat.SetOnApplyWindowInsetsListener(content, new ImeInsetsListener());
         BindToWifiNetwork();
+    }
+
+    // 把鍵盤高度套成內容底部 padding；鍵盤收起時為 0（同時保留導覽列高度避免內容被遮）
+    private sealed class ImeInsetsListener : Java.Lang.Object, IOnApplyWindowInsetsListener
+    {
+        public WindowInsetsCompat OnApplyWindowInsets(Android.Views.View v, WindowInsetsCompat insets)
+        {
+            var ime = insets.GetInsets(WindowInsetsCompat.Type.Ime());
+            var nav = insets.GetInsets(WindowInsetsCompat.Type.SystemBars());
+            v.SetPadding(v.PaddingLeft, v.PaddingTop, v.PaddingRight, System.Math.Max(ime.Bottom, nav.Bottom));
+            return insets;
+        }
     }
 
     // 將整個 process 的 socket 綁定到 WiFi 網路。

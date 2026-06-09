@@ -289,6 +289,7 @@ public partial class ChatViewModel : ObservableObject
     private void OnAckReceived(ushort responderId, ushort ackedSeq) => RunOnUi(() =>
     {
         // 找到對應的送出訊息，標記為已送達
+        bool found = false;
         for (int i = Messages.Count - 1; i >= 0; i--)
         {
             var m = Messages[i];
@@ -297,9 +298,11 @@ public partial class ChatViewModel : ObservableObject
                 && m.Seq == ackedSeq)
             {
                 m.Status = MessageStatus.Delivered;
+                found = true;
                 break;
             }
         }
+        Console.WriteLine($"LPTT: OnAckReceived from=0x{responderId:X4} ackedSeq={ackedSeq} → {(found ? "配對成功(已送達)" : "找不到對應訊息")}");
     });
 
     private void OnDeviceDiscovered(Contact contact) => RunOnUi(() =>

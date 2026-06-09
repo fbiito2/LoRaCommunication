@@ -62,17 +62,22 @@ void HandleFrame(byte[] frame)
             if (!probe) Console.Write("> ");
 
             // 點對點文字 → 回 ACK（廣播/群組不回），讓對方顯示「已送達」
+            // 送 3 次避免單一封包回程遺失（每個 ACK 封包自己的 SEQ 不同，避免被去重）
             if (pkt.Type == PacketType.Text && DstId.IsUnicast(pkt.DstId))
             {
-                var ack = new LoRaPacket
+                for (int k = 0; k < 3; k++)
                 {
-                    DstId = pkt.SrcId,
-                    Seq = NextSeq(),
-                    Type = PacketType.Ack,
-                    Payload = new byte[] { (byte)(pkt.Seq >> 8), (byte)(pkt.Seq & 0xFF) },
-                };
-                sendLink(LinkFrame.WrapData(PacketCodec.Serialize(ack)));
-                Console.WriteLine($"→ ACK 回 0x{pkt.SrcId:X4}（seq {pkt.Seq}）");
+                    var ack = new LoRaPacket
+                    {
+                        DstId = pkt.SrcId,
+                        Seq = NextSeq(),
+                        Type = PacketType.Ack,
+                        Payload = new byte[] { (byte)(pkt.Seq >> 8), (byte)(pkt.Seq & 0xFF) },
+                    };
+                    sendLink(LinkFrame.WrapData(PacketCodec.Serialize(ack)));
+                    Thread.Sleep(300);
+                }
+                Console.WriteLine($"→ ACK ×3 回 0x{pkt.SrcId:X4}（acked seq {pkt.Seq}）");
             }
         }
     }

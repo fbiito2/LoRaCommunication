@@ -14,6 +14,8 @@ public class WiFiCommService : ICommService
     private UdpClient?  _udp;
     private IPEndPoint? _remoteEp;
     private CancellationTokenSource? _recvCts;
+    private CancellationTokenSource? _hbCts;
+    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(3) };
 
     public bool     IsConnected { get; private set; }
     public CommMode Mode        => CommMode.WiFi;
@@ -36,6 +38,7 @@ public class WiFiCommService : ICommService
         const string c6lIp = "192.168.4.1";
         _logger.LogInformation("WiFi UDP 連接至 {IP}:{Port}", c6lIp, UDP_PORT);
 
+        _udp?.Close(); // 重連時清掉舊 socket
         _udp      = new UdpClient();
         _remoteEp = new IPEndPoint(IPAddress.Parse(c6lIp), UDP_PORT);
 
@@ -58,6 +61,10 @@ public class WiFiCommService : ICommService
         _recvCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _ = ReceiveLoopAsync(_recvCts.Token);
 
+        // 啟動心跳偵測（定期 GET /version，連續失敗 → 判定離線，使用者可重連）
+        _hbCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _ = HeartbeatLoopAsync(_hbCts.Token);
+
         _logger.LogInformation("WiFi UDP 連線成功");
         Console.WriteLine("LPTT: WiFi 連線完成，接收迴圈啟動");
     }
@@ -74,11 +81,53 @@ public class WiFiCommService : ICommService
     public Task DisconnectAsync()
     {
         _recvCts?.Cancel();
+        _hbCts?.Cancel();
         _udp?.Close();
         _udp        = null;
         IsConnected = false;
         OnConnectionChanged?.Invoke(false);
         return Task.CompletedTask;
+    }
+
+    // ── 心跳：定期 GET /version，連續 3 次逾時 → 判定 C6L 離線 ───────
+    // UDP 無連線狀態，裝置斷電/離開 WiFi 時收不到任何錯誤；靠主動探測補上。
+    private async Task HeartbeatLoopAsync(CancellationToken ct)
+    {
+        const string url = "http://192.168.4.1/version";
+        int fails = 0;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(4), ct);
+                bool ok;
+                try
+                {
+                    using var resp = await _http.GetAsync(url, ct);
+                    ok = resp.IsSuccessStatusCode;
+                }
+                catch { ok = false; }
+
+                if (ok) { fails = 0; }
+                else if (++fails >= 3)
+                {
+                    _logger.LogWarning("心跳連續逾時，判定 C6L 離線");
+                    Console.WriteLine("LPTT: 心跳逾時 → 裝置離線");
+                    MarkDisconnected();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) { /* 正常結束 */ }
+    }
+
+    /// <summary>標記為離線（心跳逾時）。之後使用者可再按「連接」重連。</summary>
+    private void MarkDisconnected()
+    {
+        if (!IsConnected) return;
+        IsConnected = false;
+        _recvCts?.Cancel();
+        OnConnectionChanged?.Invoke(false);
     }
 
     private async Task ReceiveLoopAsync(CancellationToken ct)

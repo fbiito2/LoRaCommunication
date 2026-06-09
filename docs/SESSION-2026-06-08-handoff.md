@@ -180,3 +180,16 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
   ⚠ 尚未量測 far-side 掉包率（筆電收不到 C6L AP，無法當第二端點）；待裝置靠近筆電
   或用手機+PC 兩端時補。
 - 共用核心 lib 尚未正式抽出（PC 端目前用 `<Compile Link>` 重用 Protocol 檔）；之後可抽 `LoRaPTT.Core`。
+
+---
+
+## 八、2026-06-09 晚 新增第三台節點 D400（已燒＋驗收）
+
+- 新機（空 NVS）燒入 git 最新韌體 **FW 0.5.0**（家裡筆電 `pio run -e m5stack-unitc6l -t upload`，COM9）。
+- **Device ID = 0xD400**（MAC 尾碼 `20:6E:F1:15:D4:00`）；SSID `LoRaPTT_D400`、密碼 `loraptt2026`（全機通用預設）、AP BSSID `d4:01`（NIC+1）。
+- 燒完 esptool 的 RTS reset／軟體 DTR 都沒讓 app 乾淨起來（HWCDC 老問題）→ **手按一下 RESET 才正常開機**；OLED 顯示 `ID:D400 / LoRaPTT / APP:none`、AP 廣播 RSSI −22。**結論：新機燒完務必手動 RESET 一次再驗證。**
+- 目前共三台：**CDB8、BF8C、D400**，可做中繼/多跳/群組測試。
+- 待定：D400 要當第三端點還是中繼節點（明天決定後再規劃驗證）。
+
+> 明日（06-09 之後）在公司續：先 `git pull`（HEAD≥`b4b2f27`），讀本檔第五~八節決定方向。
+> 鎖定規則照舊：net7 + SDK 7.0.400，編譯問題只補環境、不改專案版本。

@@ -141,3 +141,23 @@
 4. （後期構想）Meshtastic 互通 App 翻譯橋。
 
 > 明日 08:00 續。pull 到最新 `main`（HEAD=35e4c79 或更新），先讀本節「五」。
+
+---
+
+## 六、2026-06-09 net7 build 環境踩雷（換機器照這份補裝，別再卡）
+
+git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 build net7-android，需依序補齊：
+1. **`.NET SDK 7.0.400`**（`winget install Microsoft.DotNet.SDK.7` → 裝到 7.0.410，`rollForward:latestFeature` 接受）。
+2. **maui workloads**：`dotnet workload restore app\LoRaPTT\LoRaPTT.csproj`（會裝 android+ios+maccatalyst；只裝 maui-android 會在評估其他 TFM 時報 NETSDK1147）。
+3. **Android SDK Platform API 33**（net7 maui 預設 target；機器可能只有 34/35/36）。安裝雷：
+   - 寫入 `C:\Program Files (x86)\Android\android-sdk` 需 **系統管理員**（UAC 提權）。
+   - **新版 `cmdline-tools\latest\bin\sdkmanager` 需 JDK17+**；**舊版 `tools\bin\sdkmanager` 需 JDK8（要 JAXB）**。本機只有 JDK11 → 兩者都掛。
+   - ✅ 正解：用**舊版 `tools\bin\sdkmanager.bat` + `JAVA_HOME` 指向 JDK8**（本機 `C:\Program Files\Eclipse Foundation\jdk-8.0.302.8-hotspot`）裝 `"platforms;android-33"`，成功。
+   - **依規則：以上一律「補裝環境」，絕不改 csproj 的 target API/TFM 來遷就。**
+- build：`dotnet build app\LoRaPTT\LoRaPTT.csproj -f net7.0-android -c Debug -p:EmbedAssembliesIntoApk=true`（從 ASCII junction `C:\LoRaPTT_Build`，PowerShell）。
+
+### 本日（06-09）已完成（程式碼已 push；APK 已實機部署 S25，待功能驗收）
+- **A**：收到 SOS → 聊天室插「🆘 來自 0xXXXX + 定位(有的話) + 附加文字」（`ChatViewModel.OnSosReceived`）。
+- **B**：`AndroidManifest` 補 `ACCESS_COARSE/FINE_LOCATION`（修 SOS 頁定位失敗）。
+- 待驗收：SOS 頁點一下→跳定位權限→GPS 取得；另一台發 SOS→聊天室出現 🆘。
+- 仍待辦：群組/點對點/OTA 補實機驗證、F-051 設定頁、Phase 4 語音。

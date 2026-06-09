@@ -3,6 +3,7 @@
 html, body, #app {
     height: 100%;
     margin: 0;
+    background-color: #212529; /* 深色底，消除內容卡片四周露出的白邊 */
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 

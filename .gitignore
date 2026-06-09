@@ -34,3 +34,7 @@ desktop.ini
 # PC client build output
 pc-client/bin/
 pc-client/obj/
+
+# PC GUI build output
+pc-gui/bin/
+pc-gui/obj/

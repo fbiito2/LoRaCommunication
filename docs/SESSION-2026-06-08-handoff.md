@@ -156,8 +156,7 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
    - **依規則：以上一律「補裝環境」，絕不改 csproj 的 target API/TFM 來遷就。**
 - build：`dotnet build app\LoRaPTT\LoRaPTT.csproj -f net7.0-android -c Debug -p:EmbedAssembliesIntoApk=true`（從 ASCII junction `C:\LoRaPTT_Build`，PowerShell）。
 
-### 本日（06-09）已完成（程式碼已 push；APK 已實機部署 S25，待功能驗收）
-- **A**：收到 SOS → 聊天室插「🆘 來自 0xXXXX + 定位(有的話) + 附加文字」（`ChatViewModel.OnSosReceived`）。
-- **B**：`AndroidManifest` 補 `ACCESS_COARSE/FINE_LOCATION`（修 SOS 頁定位失敗）。
-- 待驗收：SOS 頁點一下→跳定位權限→GPS 取得；另一台發 SOS→聊天室出現 🆘。
+### 本日（06-09）已完成並 ✅ 實機驗收通過（S25）
+- **A**：收到 SOS → 聊天室插「🆘 來自 0xXXXX + 定位(有的話) + 附加文字」（`ChatViewModel.OnSosReceived`）。✅
+- **B**：`AndroidManifest` 補 `ACCESS_COARSE/FINE_LOCATION`（修 SOS 頁定位失敗，定位權限正常）。✅
 - 仍待辦：群組/點對點/OTA 補實機驗證、F-051 設定頁、Phase 4 語音。

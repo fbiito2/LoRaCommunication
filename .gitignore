@@ -30,3 +30,7 @@ desktop.ini
 *.zip
 *.tar.gz
 *.7z
+
+# PC client build output
+pc-client/bin/
+pc-client/obj/

@@ -151,6 +151,10 @@
                             @onclick="() => VM.SelectTargetCommand.Execute(c.IdHex)">
                         選為目標
                     </button>
+                    <button class="btn btn-sm btn-outline-danger py-0"
+                            @onclick="() => VM.RemoveContactCommand.Execute(c)" title="移除聯絡人">
+                        ✕
+                    </button>
                 </div>
             }
 

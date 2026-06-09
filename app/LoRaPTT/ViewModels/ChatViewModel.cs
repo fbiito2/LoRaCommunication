@@ -363,6 +363,17 @@ public partial class ChatViewModel : ObservableObject
         Notify();
     }
 
+    /// <summary>移除聯絡人（F-003）</summary>
+    [RelayCommand]
+    private void RemoveContact(Contact contact)
+    {
+        if (contact is null) return;
+        Contacts.Remove(contact);
+        _store.SaveContacts(Contacts);
+        StatusMessage = $"已移除聯絡人：{contact.DisplayName}";
+        Notify();
+    }
+
     // ── 聯絡人管理（F-003）──────────────────────────────────
     [RelayCommand]
     private void AddContact()

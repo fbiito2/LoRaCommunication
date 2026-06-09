@@ -38,6 +38,10 @@ if (secsArg != null && int.TryParse(secsArg[5..], out var ls)) listenSecs = ls;
 int seqCounter = 0;
 ushort NextSeq() => (ushort)(Interlocked.Increment(ref seqCounter) & 0xFFFF);
 
+// 傳輸層注入點（WiFi/USB 分支稍後指派）；先給 no-op 佔位，讓 HandleFrame 可捕獲
+Action<byte[]> sendLink = _ => { };
+Action shutdown = () => { };
+
 // ── 處理收到的 LinkFrame（兩種傳輸共用）──
 void HandleFrame(byte[] frame)
 {
@@ -56,6 +60,20 @@ void HandleFrame(byte[] frame)
             };
             Console.WriteLine($"\n← [0x{pkt.SrcId:X4}→0x{pkt.DstId:X4}] {body}  (RSSI {rssi})");
             if (!probe) Console.Write("> ");
+
+            // 點對點文字 → 回 ACK（廣播/群組不回），讓對方顯示「已送達」
+            if (pkt.Type == PacketType.Text && DstId.IsUnicast(pkt.DstId))
+            {
+                var ack = new LoRaPacket
+                {
+                    DstId = pkt.SrcId,
+                    Seq = NextSeq(),
+                    Type = PacketType.Ack,
+                    Payload = new byte[] { (byte)(pkt.Seq >> 8), (byte)(pkt.Seq & 0xFF) },
+                };
+                sendLink(LinkFrame.WrapData(PacketCodec.Serialize(ack)));
+                Console.WriteLine($"→ ACK 回 0x{pkt.SrcId:X4}（seq {pkt.Seq}）");
+            }
         }
     }
     else if (frame[0] == LinkFrame.Ctrl)
@@ -84,9 +102,6 @@ void DrainFrames(List<byte> acc)
         HandleFrame(frame);
     }
 }
-
-Action<byte[]> sendLink;
-Action shutdown;
 
 if (useWifi)
 {

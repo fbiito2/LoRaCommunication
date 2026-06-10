@@ -112,9 +112,11 @@ C6L 提供兩種傳輸層，**可同時啟用**，上層封包格式完全一致
 | 傳輸層 | 韌體端 | APP 端 | 狀態 |
 |--------|--------|--------|------|
 | **WiFi AP + UDP** | ✅ `wifi_service` | ✅ `WiFiCommService`（含心跳離線偵測） | **已實機驗證**（手機/PC 皆通） |
-| **USB Serial（CDC）** | ✅ `usb_serial_service`（2-byte 長度前綴幀） | ❌ `UsbSerialCommService` **為空殼，直接拋 NotImplementedException** | **未實作** |
+| **USB Serial（CDC）** | ✅ `usb_serial_service`（2-byte 長度前綴幀） | ✅ `Platforms/Android/UsbSerialImpl`（CDC-ACM）+ `CommRouter` 自動選 USB/WiFi | **🟡 已實作、net7 build 過，待實機驗證** |
 
-> **目前手機/PC 用 Type-C 接 C6L 無法連線**——App 端只在 `MauiProgram.cs` 註冊 `WiFiCommService`，USB 那行被註解；且無 USB serial 套件、無 `Platforms/Android/UsbSerialImpl.cs`。**這是 Phase 2 待實作功能，非 bug。**
+> **F-054 已實作（commit `3334135`）**：Android USB OTG CDC-ACM（列舉 VID `0x303A`、權限、開埠、DTR、收發、2-byte 長度幀、收訊重同步）。`CommRouter` 連線時先試 USB（偵測到 C6L 才成功）、失敗落回 WiFi。**尚未實機驗證**。
+>
+> **回家怎麼測 F-054**：手機 USB-C 接 C6L → 開 App → 連接 → CommRouter 會先試 USB → 跳「允許 USB 存取」系統對話框 → 允許 → 看是否顯示裝置 ID（= USB 連上）。⚠ 若連不上或不穩，極可能是 **HWCDC over OTG 不穩**（見下方風險），那就確認此路不可靠、退回 WiFi 為主。除錯用 `adb logcat -s DOTNET:*` 看 `UsbSerialImpl` 的 log。
 
 **F-054 USB Serial 傳輸層（待實作）實作規劃：**
 1. 加 .NET Android USB serial 套件（`UsbSerialForAndroid`），csproj net7-android。

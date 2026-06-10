@@ -415,6 +415,17 @@ APP 與 C6L 的連線同樣可走 USB Serial 或 WiFi，兩者實作同一 `ICom
 - PTT 按鈕邏輯
 - 語音端到端測試
 
+#### Phase 4 子模組實作狀態（⚠ 有兩個空殼/前置阻擋，勿當「語音已完成」）
+
+| 子模組 | 狀態 | 說明 |
+|--------|------|------|
+| **Codec2 native lib** | ❌ **未編譯** | `Codec2Service` 的 P/Invoke 指向 `libcodec2`，但 `.so/.a` 從未編。**現在一進通話呼叫 encode/decode 會 `DllNotFoundException` 崩潰**。前置阻擋：必須先用 NDK/CMake 把 Codec2 編成 Android `arm64-v8a/.so`（iOS `.a`）。這是 Phase 4 唯一有「環境步驟」的部分，謹慎做。 |
+| **Android 音訊（錄/播）** | ✅ 已實作 | `Platforms/Android/AudioRecordImpl`（`AudioRecord`）/`AudioPlayImpl`（`AudioTrack`）。 |
+| **iOS 音訊（錄/播）** | ❌ **空殼** | `Platforms/iOS/AudioRecordImpl`/`AudioPlayImpl` 直接 `throw NotImplementedException`。⚠ **即使 Android 語音做完，iOS 仍完全無語音、一進通話即崩**——別把「Android 語音 OK」當成「語音功能完成」。iOS 要做需 `AVAudioEngine`（PlayAndRecord, 8000Hz Int16）。 |
+| PTT 按鈕邏輯 / 累積送包 | 🟡 部分 | `MainViewModel` 有 PTT 框架，但依賴上面兩項才能端到端跑。 |
+
+> **F-055 Codec2 native lib（前置阻擋）**、**F-056 iOS 音訊（待實作）** — 兩者皆「規劃有、實際空殼」，列此確保不被默默漏掉。
+
 ### Phase 5：中繼網路完善
 
 - 洪泛中繼轉發 + 去重

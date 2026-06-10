@@ -107,6 +107,24 @@ C6L 提供兩種傳輸層，**可同時啟用**，上層封包格式完全一致
 > → C6L 用 Type-C 接 B 手機（純供電）、同時開 WiFi AP 讓 A 手機連入傳訊。
 > 兩傳輸層同時運作，缺一不可。
 
+#### 3.2.1 傳輸層實作狀態（⚠ 重要：USB 尚未實作）
+
+| 傳輸層 | 韌體端 | APP 端 | 狀態 |
+|--------|--------|--------|------|
+| **WiFi AP + UDP** | ✅ `wifi_service` | ✅ `WiFiCommService`（含心跳離線偵測） | **已實機驗證**（手機/PC 皆通） |
+| **USB Serial（CDC）** | ✅ `usb_serial_service`（2-byte 長度前綴幀） | ❌ `UsbSerialCommService` **為空殼，直接拋 NotImplementedException** | **未實作** |
+
+> **目前手機/PC 用 Type-C 接 C6L 無法連線**——App 端只在 `MauiProgram.cs` 註冊 `WiFiCommService`，USB 那行被註解；且無 USB serial 套件、無 `Platforms/Android/UsbSerialImpl.cs`。**這是 Phase 2 待實作功能，非 bug。**
+
+**F-054 USB Serial 傳輸層（待實作）實作規劃：**
+1. 加 .NET Android USB serial 套件（`UsbSerialForAndroid`），csproj net7-android。
+2. `AndroidManifest`：`android.hardware.usb.host` feature + `USB_DEVICE_ATTACHED` intent filter + 執行期 USB 權限請求。
+3. `Platforms/Android/UsbSerialImpl.cs` + 補完 `UsbSerialCommService`：列舉 USB → 認 **ESP32-C6 CDC（VID `0x303A`）** → 請權限 → 開埠 115200 → 收發**含 2-byte 大端長度前綴**（對應韌體 `usb_serial_service`），並做與 PC 客戶端相同的**重同步解析**（容忍 debug log，雖韌體已在 USB 有 APP 時抑制 log）。
+4. `MauiProgram` 改為可同時註冊兩傳輸層、或連線畫面（F-030 連線畫面）讓使用者選 USB/WiFi。
+5. 與 WiFi 共用 `ICommService`，上層（訊息/語音）零改動。
+
+> **⚠ 風險（先記）：** C6L 原生 **HWCDC USB 對「會開埠的 host」實測不穩**（PC 端資料時有時無、重置後難讀，見交接文件）。手機 OTG 很可能踩同樣問題。**實作前建議先用手機 USB 終端機 App 驗證 HWCDC 在 OTG 下到底穩不穩，通且穩才值得投入完整實作。** WiFi 為目前唯一已驗證穩定的傳輸層。
+
 ### 3.3 C6L ↔ C6L 通訊
 
 - LoRa 920-925 MHz（台灣 ISM 頻段）

@@ -23,10 +23,13 @@ public static class MauiProgram
         builder.Logging.AddDebug();
 #endif
 
-        // ── 通訊服務（WiFi 優先，USB Serial Phase 2 完成後啟用）──
-        // TODO: Phase 2 硬體到手後改為偵測 USB OTG 自動選擇
-        builder.Services.AddSingleton<ICommService, WiFiCommService>();
-        // builder.Services.AddSingleton<ICommService, UsbSerialCommService>();
+        // ── 通訊服務（F-054：CommRouter 自動選 USB / WiFi）──
+        // 連線時先試 USB（偵測到 C6L 才成功），失敗落回 WiFi。上層只見單一 ICommService。
+        builder.Services.AddSingleton<WiFiCommService>();
+#if ANDROID
+        builder.Services.AddSingleton<IUsbCommService, UsbSerialImpl>();
+#endif
+        builder.Services.AddSingleton<ICommService, CommRouter>();
 
         // ── 文字訊息服務（封包組裝/解析、ACK、PING 探測）──────
         builder.Services.AddSingleton<IMessagingService, MessagingService>();

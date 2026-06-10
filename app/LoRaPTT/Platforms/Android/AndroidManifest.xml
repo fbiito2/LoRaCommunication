@@ -6,4 +6,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- F-054 USB OTG：手機 USB-C 直連 C6L 的 USB CDC 傳資料 -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 </manifest>

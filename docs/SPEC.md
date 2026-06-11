@@ -112,7 +112,11 @@ C6L 提供兩種傳輸層，**可同時啟用**，上層封包格式完全一致
 | 傳輸層 | 韌體端 | APP 端 | 狀態 |
 |--------|--------|--------|------|
 | **WiFi AP + UDP** | ✅ `wifi_service` | ✅ `WiFiCommService`（含心跳離線偵測） | **已實機驗證**（手機/PC 皆通） |
-| **USB Serial（CDC）** | ✅ `usb_serial_service`（2-byte 長度前綴幀） | ✅ `Platforms/Android/UsbSerialImpl`（CDC-ACM）+ `CommRouter` 自動選 USB/WiFi | **🟡 已實作、net7 build 過，待實機驗證** |
+| **USB Serial（CDC）** | ✅ `usb_serial_service`（2-byte 長度前綴幀） | ✅ `Platforms/Android/UsbSerialImpl`（CDC-ACM）+ `CommRouter` 自動選 USB/WiFi | **🟠 實機半通：手機→C6L OK、C6L→手機不通（HWCDC/DTR）** |
+
+> **F-054 實機發現（2026-06-09，fw 0.5.1）**：USB 偵測+權限+**手機→C6L 方向都通**（C6L 收到 hello、OLED 顯示 `APP:USB`）；但 **C6L→手機 的 ack 回不來** → 手機卡「握手中」。
+> 根因：韌體 `usb_serial_service.send()` 的 `setTxTimeoutMs(0)` 在 HWCDC 判定「無 host（DTR 未拉起）」時把 TX 丟棄；**Android USB OTG host 未可靠拉起 DTR**（`UsbSerialImpl` 的 `SET_CONTROL_LINE_STATE` 疑未生效）。移除 send() 的 `isConnected()` 守衛**無效**（commit `bdc7d1b`），證明問題在 HWCDC TX 的 DTR 判定，**正是本表上方預警的「HWCDC over OTG 不穩」**。
+> **下一步（需專門 debug bench）**：① `UsbSerialImpl` 加 log（SET_CONTROL_LINE_STATE 回傳值、ReadLoop 讀到幾 byte、SendAsync 結果）；② 試「USB 有 APP 時改用非 0 tx timeout」韌體條件化；③ 穩定 adb（C6L softAP 或有線）+ C6L serial console 對拍。**WiFi 仍為唯一可靠傳輸層。**
 
 > **F-054 已實作（commit `3334135`）**：Android USB OTG CDC-ACM（列舉 VID `0x303A`、權限、開埠、DTR、收發、2-byte 長度幀、收訊重同步）。`CommRouter` 連線時先試 USB（偵測到 C6L 才成功）、失敗落回 WiFi。**尚未實機驗證**。
 >

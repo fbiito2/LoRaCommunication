@@ -16,7 +16,9 @@ bool UsbSerialService::isConnected() {
 }
 
 void UsbSerialService::send(const uint8_t* data, size_t len) {
-    if (!isConnected()) return;
+    // 注意：不可用 isConnected()(=(bool)Serial=DTR) 當守衛——Android USB host
+    // 不一定拉起 DTR，會導致「收得到 hello、卻不回 ack」、手機卡在握手中。
+    // setTxTimeoutMs(0) 已保證沒 host 時寫入直接丟棄、不阻塞，故可無條件寫。
     // 先寫入 2-byte 長度前綴，讓接收端知道封包邊界
     uint8_t lenBuf[2] = { (uint8_t)(len >> 8), (uint8_t)(len & 0xFF) };
     Serial.write(lenBuf, 2);

@@ -18,12 +18,19 @@ bool UsbSerialService::isConnected() {
 void UsbSerialService::send(const uint8_t* data, size_t len) {
     // 注意：不可用 isConnected()(=(bool)Serial=DTR) 當守衛——Android USB host
     // 不一定拉起 DTR，會導致「收得到 hello、卻不回 ack」、手機卡在握手中。
-    // setTxTimeoutMs(0) 已保證沒 host 時寫入直接丟棄、不阻塞，故可無條件寫。
-    // 先寫入 2-byte 長度前綴，讓接收端知道封包邊界
+    //
+    // 但也不能沿用全域 setTxTimeoutMs(0)：timeout=0 在 host 沒「即時就緒」時會
+    // 把寫入直接丟棄——ack 就是這樣被丟掉、手機永遠卡握手中（F-054 半通主因）。
+    // send() 只在「對方是已握手 APP」時被呼叫（握手 ack，或 broadcastToApps
+    // 推給已握手傳輸層的 LoRa 幀），這些「資料」必須確實送達，故寫入期間給短
+    // 逾時讓它真的送出；寫完還原為 0，保留「power-only 純供電時 debug log 不卡
+    // main loop」的保護（那才是當初設 0 的目的）。
     uint8_t lenBuf[2] = { (uint8_t)(len >> 8), (uint8_t)(len & 0xFF) };
+    Serial.setTxTimeoutMs(50);
     Serial.write(lenBuf, 2);
     Serial.write(data, len);
     Serial.flush();
+    Serial.setTxTimeoutMs(0);
 }
 
 void UsbSerialService::onReceive(std::function<void(const uint8_t*, size_t)> cb) {

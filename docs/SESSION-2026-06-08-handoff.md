@@ -206,4 +206,10 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
   - 手機做 USB OTG host 時，**手機唯一 USB-C 被佔住 → adb 斷線**，筆電讀不到手機 log。改用 C6L 端觀測。
   - C6L 端遙測：筆電 WiFi `netsh wlan connect name=LoRaPTT_xxxx interface="Wi-Fi 2"`（**雙網卡必須指定 interface**，否則連不上）→ `GET http://192.168.4.1/version`。零改動、零接線，比序列 log 好用。
   - 每次改韌體要重燒 D400：得把 D400 USB-C 從**手機**換回**筆電**（COM9）→ 燒 → **手動 RESET** → 換回手機測。USB-swap 來回很煩，但目前無解（除非裝 Grove UART debug 線）。
-- **待補**：CDB8/BF8C 仍是舊版（CDB8=0.5.1，無此 ack 修正）→ 下次一併升 0.5.2 保持三台一致。
+- **完整端到端實機驗證通過**（USB 收訊那一哩也補上了）：
+  `筆電 →(WiFi)→ BF8C(0.5.2) →(LoRa)→ D400 →(USB OTG)→ 手機App 顯示`，
+  且點對點（DST=D400）D400 有**回 ACK**（pc-client 收到 `[0xD400→0xBF8C] type=0x04`，RSSI −24）、手機 App 也顯示「0xBF8C → Hello-D400」。
+  → 證明 USB OTG 雙向（hello-ack + 收 LoRa 推播）皆正常。
+  - pc-client 送出務必加 `probe`（否則跳過 send、卡互動 ReadLine、`tx` 永遠 0）。
+  - 筆電 WiFi 連 C6L 要指定 `interface="Wi-Fi 2"`；多 AP 同為 192.168.4.x，一次只連一台避免衝突。
+- **版本現況**：D400=**0.5.2**、BF8C=**0.5.2**、**CDB8 仍 0.5.1**（待下次插筆電升 0.5.2 三台齊一）。

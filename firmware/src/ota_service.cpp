@@ -31,6 +31,13 @@ static uint32_t _scCnt  = 0; // shortCb 計數
 static uint32_t _tcCnt  = 0; // tripleCb 計數
 static int      _tapCnt = 0; // 目前 tapCount
 static bool     _btnPressing = false; // 目前 pressing 狀態
+// GPS（實機驗證）
+static bool     _gpsFix   = false;
+static int      _gpsSats  = 0;
+static double   _gpsLat   = 0;
+static double   _gpsLon   = 0;
+static uint32_t _gpsBytes = 0;
+static uint32_t _gpsBaud  = 0;
 
 void setLoraStatus(bool ok, int err) { _loraOk = ok; _loraErr = err; }
 void setI2cScan(const String& s) { _i2cScan = s; }
@@ -41,6 +48,9 @@ void setBtnDebug(int board, uint8_t reg0F, bool btnPressed, uint32_t loopCnt) {
 }
 void setBtnEdgeDebug(uint32_t wpCnt, uint32_t wrCnt, uint32_t scCnt, uint32_t tcCnt, int tapCnt, bool pressing) {
     _wpCnt = wpCnt; _wrCnt = wrCnt; _scCnt = scCnt; _tcCnt = tcCnt; _tapCnt = tapCnt; _btnPressing = pressing;
+}
+void setGps(bool fix, int sats, double lat, double lon, uint32_t rxBytes, uint32_t baud) {
+    _gpsFix = fix; _gpsSats = sats; _gpsLat = lat; _gpsLon = lon; _gpsBytes = rxBytes; _gpsBaud = baud;
 }
 
 // ── OLED 直接繪製進度（OTA 上傳期間 main loop 被 handleClient 阻塞，
@@ -75,7 +85,13 @@ static void handleVersion() {
                ",\"sc\":" + String(_scCnt) +
                ",\"tc\":" + String(_tcCnt) +
                ",\"tap\":" + String(_tapCnt) +
-               ",\"pressing\":" + (_btnPressing ? "true" : "false") + "}";
+               ",\"pressing\":" + (_btnPressing ? "true" : "false") +
+               ",\"gps_fix\":" + (_gpsFix ? "true" : "false") +
+               ",\"gps_sats\":" + String(_gpsSats) +
+               ",\"gps_lat\":" + String(_gpsLat, 6) +
+               ",\"gps_lon\":" + String(_gpsLon, 6) +
+               ",\"gps_bytes\":" + String(_gpsBytes) +
+               ",\"gps_baud\":" + String(_gpsBaud) + "}";
     _server.send(200, "application/json", j);
 }
 

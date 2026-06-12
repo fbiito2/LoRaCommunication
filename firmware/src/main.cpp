@@ -15,12 +15,13 @@
 #include "led.h"
 #include "ota_service.h"
 #include "debug_log.h"
+#include "gps.h"
 
 // USB CDC 作為資料通道時抑制除錯 log（見 debug_log.h）
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.5.2"
+#define FW_VERSION "0.5.3"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -377,6 +378,9 @@ void setup() {
     usbSerialService.begin();
     _transports[0] = { &usbSerialService, false };
 
+    // GPS（Grove PORT.A UART，選配；沒接也無害，只是讀不到資料）
+    Gps::begin();
+
     // WiFi 參數設定（實際啟動在 POST Step 3）
     if (strcmp(_cfg.wifiSsid, "LoRaPTT") == 0) {
         static char ssidBuf[32];
@@ -463,6 +467,11 @@ void loop() {
     usbSerialService.loop();
     wifiService.loop();
     Ota::loop(); // 處理 HTTP OTA 更新請求
+
+    // GPS：讀取/解析 NMEA，並回報給 /version（實機定位驗證）
+    Gps::loop();
+    Ota::setGps(Gps::hasFix(), Gps::sats(), Gps::lat(), Gps::lon(),
+                Gps::rxBytes(), Gps::baud());
 
     // 更新 OLED 統計與 APP 連線狀態
     bool u = _transports[0].hasApp, w = _transports[1].hasApp;

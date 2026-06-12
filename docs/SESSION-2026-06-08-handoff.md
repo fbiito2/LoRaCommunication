@@ -193,3 +193,17 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
 
 > 明日（06-09 之後）在公司續：先 `git pull`（HEAD≥`b4b2f27`），讀本檔第五~八節決定方向。
 > 鎖定規則照舊：net7 + SDK 7.0.400，編譯問題只補環境、不改專案版本。
+
+---
+
+## 九、F-054 USB 半通修復 — ✅ 實機驗證通過（FW 0.5.2）
+
+- **症狀**：手機 USB OTG 接 C6L，App 永遠卡「握手中」（hello 送得到、ack 回不來＝半通）。
+- **根因**：`usb_serial_service.cpp` 的 `send()` 沿用全域 `setTxTimeoutMs(0)`——host（Android USB 驅動）沒「即時就緒」時，**ack 寫入被直接丟棄**，手機收不到。`g_usbDataMode` 要下一圈 loop 才設 true，送 ack 當下沒保護。
+- **修法**（commit `45f1038`，FW 0.5.2）：`send()` 只在「對方是已握手 APP」時被呼叫，故**寫入期間設 `setTxTimeoutMs(50)` 確保送達、寫完還原 0**（保留 power-only 純供電時 debug log 不卡 main loop 的原始保護）。**非更底層 HWCDC 問題，不需動 TinyUSB。**
+- **驗證**：D400 燒 0.5.2 → 手機 USB OTG 接 D400 → App **「已連線」** ✅。
+- **踩雷紀錄（debug 流程經驗）**：
+  - 手機做 USB OTG host 時，**手機唯一 USB-C 被佔住 → adb 斷線**，筆電讀不到手機 log。改用 C6L 端觀測。
+  - C6L 端遙測：筆電 WiFi `netsh wlan connect name=LoRaPTT_xxxx interface="Wi-Fi 2"`（**雙網卡必須指定 interface**，否則連不上）→ `GET http://192.168.4.1/version`。零改動、零接線，比序列 log 好用。
+  - 每次改韌體要重燒 D400：得把 D400 USB-C 從**手機**換回**筆電**（COM9）→ 燒 → **手動 RESET** → 換回手機測。USB-swap 來回很煩，但目前無解（除非裝 Grove UART debug 線）。
+- **待補**：CDB8/BF8C 仍是舊版（CDB8=0.5.1，無此 ack 修正）→ 下次一併升 0.5.2 保持三台一致。

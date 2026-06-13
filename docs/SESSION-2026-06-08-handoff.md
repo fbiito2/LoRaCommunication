@@ -241,3 +241,14 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
 ### 後期（backlog，未做）
 - **定期廣播自身 GPS 位置**（節點互相在地圖上看到彼此）：用 TYPE 感測/位置封包定時廣播 lat/lon。等核心穩定後再做。
 - CDB8/D400/D078 視需要升 0.6.0（目前無 GPS 模組，非必要）。
+
+### ⛔ PC 端診斷鐵則（2026-06-13 又踩一次，務必遵守）
+- **驗證某台 C6L「有沒有收到 LoRa」一律用 HTTP `GET http://192.168.4.1/version` 的 `rx`/`src`/`rssi`（TCP）**。
+  rx 有跳、src 是發送方 = 收到。這是唯一可靠的 PC 端收訊判斷。
+- **絕對不要用 `pc-client` 的 UDP 監聽來判斷「收訊」**：Windows 防火牆**擋裝置→PC 的入站 UDP**，
+  pc-client 連 hello-ack 都收不到、收到的 LoRa 也推不進來 → **會誤判成「什麼都沒收到」**（本日就因此白繞一大圈）。
+  pc-client 的「**送出**」(outbound) 不受影響，仍可用來發訊。
+- 要讓 pc-client 監聽可用 → 需**系統管理員**加防火牆入站規則：
+  `netsh advfirewall firewall add rule name="LoRaPTT-UDP-in" dir=in action=allow protocol=UDP remoteip=192.168.4.0/24`
+- **另：每台燒完/重開後要等它「跑穩」**（OLED 有畫面、`/version` 的 loops 正常爬升）**再測**；
+  剛重開的暫態會 rx=0、收不到，別誤判成壞掉。

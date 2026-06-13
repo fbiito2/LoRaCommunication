@@ -21,7 +21,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.5.3"
+#define FW_VERSION "0.5.4"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -471,7 +471,7 @@ void loop() {
     // GPS：讀取/解析 NMEA，並回報給 /version（實機定位驗證）
     Gps::loop();
     Ota::setGps(Gps::hasFix(), Gps::sats(), Gps::lat(), Gps::lon(),
-                Gps::rxBytes(), Gps::baud());
+                Gps::rxBytes(), Gps::baud(), Gps::rxPin());
 
     // 更新 OLED 統計與 APP 連線狀態
     bool u = _transports[0].hasApp, w = _transports[1].hasApp;

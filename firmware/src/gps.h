@@ -16,5 +16,6 @@ namespace Gps {
     double      lon();         // 經度（十進位度，西為負）
     uint32_t    rxBytes();     // 累計收到位元組（診斷：>0=線通且鮑率對）
     uint32_t    baud();        // 目前鮑率
+    uint32_t    rxPin();       // 目前鎖定/嘗試的 RX 腳位（4 或 5）
     uint32_t    sentences();   // 累計解析到的有效 GGA 句數
 }

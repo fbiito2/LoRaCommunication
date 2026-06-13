@@ -17,7 +17,7 @@ namespace Ota {
     void setTxStats(uint32_t count, bool ok);                // LoRa 發射統計（雙機測試）
     void setBtnDebug(int board, uint8_t reg0F, bool btnPressed, uint32_t loopCnt); // 按鈕偵錯
     void setBtnEdgeDebug(uint32_t wpCnt, uint32_t wrCnt, uint32_t scCnt, uint32_t tcCnt, int tapCnt, bool pressing); // 邊緣事件偵錯
-    void setGps(bool fix, int sats, double lat, double lon, uint32_t rxBytes, uint32_t baud); // GPS 定位狀態（實機驗證）
+    void setGps(bool fix, int sats, double lat, double lon, uint32_t rxBytes, uint32_t baud, uint32_t rxPin); // GPS 定位狀態（實機驗證）
     bool isActive();                   // 更新進行中
     int  progress();                   // 0~100
 }

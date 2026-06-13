@@ -38,6 +38,7 @@ static double   _gpsLat   = 0;
 static double   _gpsLon   = 0;
 static uint32_t _gpsBytes = 0;
 static uint32_t _gpsBaud  = 0;
+static uint32_t _gpsRx    = 0;
 
 void setLoraStatus(bool ok, int err) { _loraOk = ok; _loraErr = err; }
 void setI2cScan(const String& s) { _i2cScan = s; }
@@ -49,8 +50,8 @@ void setBtnDebug(int board, uint8_t reg0F, bool btnPressed, uint32_t loopCnt) {
 void setBtnEdgeDebug(uint32_t wpCnt, uint32_t wrCnt, uint32_t scCnt, uint32_t tcCnt, int tapCnt, bool pressing) {
     _wpCnt = wpCnt; _wrCnt = wrCnt; _scCnt = scCnt; _tcCnt = tcCnt; _tapCnt = tapCnt; _btnPressing = pressing;
 }
-void setGps(bool fix, int sats, double lat, double lon, uint32_t rxBytes, uint32_t baud) {
-    _gpsFix = fix; _gpsSats = sats; _gpsLat = lat; _gpsLon = lon; _gpsBytes = rxBytes; _gpsBaud = baud;
+void setGps(bool fix, int sats, double lat, double lon, uint32_t rxBytes, uint32_t baud, uint32_t rxPin) {
+    _gpsFix = fix; _gpsSats = sats; _gpsLat = lat; _gpsLon = lon; _gpsBytes = rxBytes; _gpsBaud = baud; _gpsRx = rxPin;
 }
 
 // ── OLED 直接繪製進度（OTA 上傳期間 main loop 被 handleClient 阻塞，
@@ -91,7 +92,8 @@ static void handleVersion() {
                ",\"gps_lat\":" + String(_gpsLat, 6) +
                ",\"gps_lon\":" + String(_gpsLon, 6) +
                ",\"gps_bytes\":" + String(_gpsBytes) +
-               ",\"gps_baud\":" + String(_gpsBaud) + "}";
+               ",\"gps_baud\":" + String(_gpsBaud) +
+               ",\"gps_rx\":" + String(_gpsRx) + "}";
     _server.send(200, "application/json", j);
 }
 

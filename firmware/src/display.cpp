@@ -13,6 +13,10 @@ String   wifiIp     = "192.168.4.1";
 uint32_t rxCount    = 0;
 uint32_t txCount    = 0;
 uint32_t relayCount = 0;
+bool     gpsFix     = false;
+int      gpsSats    = 0;
+double   gpsLat     = 0;
+double   gpsLon     = 0;
 
 static Page      _page    = Page::STATUS;
 static uint32_t  _lastMs  = 0;
@@ -66,6 +70,18 @@ void loop() {
         M5.Display.printf("Fwd:%lu\n", (unsigned long)relayCount);
         M5.Display.printf("Rx:%lu Tx:%lu\n",
                           (unsigned long)rxCount, (unsigned long)txCount);
+        break;
+
+    case Page::GPS:
+        // 64×48：每行約 10 字。座標各佔一行（6 位小數剛好放得下）。
+        M5.Display.printf("GPS %s\n", gpsFix ? "FIX" : "--");
+        M5.Display.printf("sat:%d\n", gpsSats);
+        if (gpsFix) {
+            M5.Display.printf("%.6f\n", gpsLat);
+            M5.Display.printf("%.6f\n", gpsLon);
+        } else {
+            M5.Display.println("searching");
+        }
         break;
 
     default: break;

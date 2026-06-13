@@ -3,7 +3,7 @@
 
 /// @brief OLED 顯示模組（SSD1306 64×48）
 namespace Display {
-    enum class Page { STATUS = 0, NETWORK, LORA, RELAY, PAGE_COUNT };
+    enum class Page { STATUS = 0, NETWORK, LORA, RELAY, GPS, PAGE_COUNT };
 
     void init();
     void nextPage();     // 短按按鈕切換
@@ -29,4 +29,9 @@ namespace Display {
     extern uint32_t rxCount;      // 收到（給自己）封包數
     extern uint32_t txCount;      // 代 APP 送出封包數
     extern uint32_t relayCount;   // 中繼轉發封包數
+    // GPS（選配，Grove UART）
+    extern bool     gpsFix;       // 是否已定位
+    extern int      gpsSats;      // 衛星數
+    extern double   gpsLat;       // 緯度
+    extern double   gpsLon;       // 經度
 }

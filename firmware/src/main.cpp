@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <string.h>       // memcpy（SOS 附 GPS 座標用）
 #include <ArduinoJson.h>
 #include <esp_ota_ops.h>  // F-063：OTA rollback 支援
 #include <esp_random.h>   // 硬體亂數（PING 回覆隨機退避用）
@@ -21,7 +22,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.5.5"
+#define FW_VERSION "0.6.0"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -85,10 +86,18 @@ static void sendSos() {
         pkt.dstId      = DST_BROADCAST;
         pkt.type       = PKT_TYPE_SOS;
         pkt.seq        = _sosSeq++;
-        // Payload：簡易格式 [DeviceID 2B]（無手機 → 無 GPS）
+        // Payload：[DeviceID 2B]，若 C6L 自帶 GPS 已定位則附 [Lat 8B][Lon 8B]。
+        // 格式與 APP SendSosAsync 一致（lat@offset2, lon@offset10，double 小端，
+        // 對齊 .NET BitConverter.ToDouble）→ 收端 APP 直接顯示求救座標，免手機 GPS。
         pkt.payload[0] = (_cfg.deviceId >> 8) & 0xFF;
         pkt.payload[1] = _cfg.deviceId & 0xFF;
         pkt.payloadLen = 2;
+        if (Gps::hasFix()) {
+            double la = Gps::lat(), lo = Gps::lon();
+            memcpy(&pkt.payload[2],  &la, 8);
+            memcpy(&pkt.payload[10], &lo, 8);
+            pkt.payloadLen = 18;
+        }
         Led::setLoRaTx();
         loraHandler.sendPacket(pkt);
         if (i < 2) delay(2000); // 間隔 2 秒
@@ -472,6 +481,8 @@ void loop() {
     Gps::loop();
     Ota::setGps(Gps::hasFix(), Gps::sats(), Gps::lat(), Gps::lon(),
                 Gps::rxBytes(), Gps::baud(), Gps::rxPin());
+    Display::gpsFix  = Gps::hasFix(); Display::gpsSats = Gps::sats();
+    Display::gpsLat  = Gps::lat();    Display::gpsLon  = Gps::lon();
 
     // 更新 OLED 統計與 APP 連線狀態
     bool u = _transports[0].hasApp, w = _transports[1].hasApp;

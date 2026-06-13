@@ -35,7 +35,9 @@ int listenSecs = 8;
 var secsArg = args.FirstOrDefault(a => a.StartsWith("secs:", StringComparison.OrdinalIgnoreCase));
 if (secsArg != null && int.TryParse(secsArg[5..], out var ls)) listenSecs = ls;
 
-int seqCounter = 0;
+// 每次啟動用隨機高起始 SEQ：否則每次執行都從 1 開始，重複的 (SrcId,Seq)
+// 會被接收端去重快取吃掉、訊息不顯示（實測踩過：第二次起的廣播都被手機去重）。
+int seqCounter = new Random().Next(1, 50000);
 ushort NextSeq() => (ushort)(Interlocked.Increment(ref seqCounter) & 0xFFFF);
 
 // 傳輸層注入點（WiFi/USB 分支稍後指派）；先給 no-op 佔位，讓 HandleFrame 可捕獲

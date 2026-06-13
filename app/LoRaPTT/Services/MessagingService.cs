@@ -22,7 +22,9 @@ public sealed class MessagingService : IMessagingService
     private readonly ILogger<MessagingService> _logger;
     private readonly DedupCache _dedup = new(128);
 
-    private int _seq; // 以 Interlocked 遞增，取低 16 位作為封包 SEQ
+    // 隨機高起始值：否則每次開 App 都從 1 開始，重啟後送的封包 (SrcId,Seq) 會與
+    // 接收端去重快取裡上一輪的舊紀錄相同 → 被當重複丟棄、訊息不顯示（實測踩過）。
+    private int _seq = new Random().Next(1, 50000);
 
     public string LocalNickname { get; set; } = "LoRaPTT";
     public ushort? LocalDeviceId { get; private set; }

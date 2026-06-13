@@ -22,6 +22,7 @@ using LoRaPTT.Services.Protocol;
 Console.OutputEncoding = Encoding.UTF8;
 
 bool probe = args.Any(a => a.Equals("probe", StringComparison.OrdinalIgnoreCase));
+bool echo  = args.Any(a => a.Equals("echo", StringComparison.OrdinalIgnoreCase)); // 自動回聲：收到文字原字回傳
 string? com = args.FirstOrDefault(a => a.StartsWith("COM", StringComparison.OrdinalIgnoreCase));
 bool useWifi = com is null || args.Any(a => a.Equals("wifi", StringComparison.OrdinalIgnoreCase));
 string ip = args.FirstOrDefault(a => IPAddress.TryParse(a, out _)) ?? "192.168.4.1";
@@ -80,6 +81,19 @@ void HandleFrame(byte[] frame)
                     Thread.Sleep(300);
                 }
                 Console.WriteLine($"→ ACK ×3 回 0x{pkt.SrcId:X4}（acked seq {pkt.Seq}）");
+            }
+
+            // echo 模式：收到文字 → 把原字回傳給發送者（3 份同 SEQ，接收端去重成一則）
+            if (echo && pkt.Type == PacketType.Text)
+            {
+                ushort eseq = NextSeq();
+                for (int k = 0; k < 3; k++)
+                {
+                    var ep = new LoRaPacket { DstId = pkt.SrcId, Seq = eseq, Type = PacketType.Text, Payload = pkt.Payload };
+                    sendLink(LinkFrame.WrapData(PacketCodec.Serialize(ep)));
+                    Thread.Sleep(300);
+                }
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] → echo「{Encoding.UTF8.GetString(pkt.Payload)}」回 0x{pkt.SrcId:X4}");
             }
         }
     }

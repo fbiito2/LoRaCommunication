@@ -175,11 +175,14 @@ if (probe)
 {
     if (sendText != null)
     {
-        for (int k = 0; k < 3; k++) // 送 3 次（不同 SEQ）避免單發 LoRa 遺失
+        // 與 App 一致：3 份用「同一個 SEQ」重送（提升到達率），接收端依 SRC+SEQ
+        // 去重成一則。若各份用不同 SEQ，接收端不會去重 → 同一訊息顯示多次。
+        ushort seq = NextSeq();
+        for (int k = 0; k < 3; k++)
         {
-            var p = new LoRaPacket { DstId = dst, Seq = NextSeq(), Type = PacketType.Text, Payload = Encoding.UTF8.GetBytes(sendText) };
+            var p = new LoRaPacket { DstId = dst, Seq = seq, Type = PacketType.Text, Payload = Encoding.UTF8.GetBytes(sendText) };
             sendLink(LinkFrame.WrapData(PacketCodec.Serialize(p)));
-            Console.WriteLine($"→ 送出至 0x{dst:X4}：{sendText} (#{k + 1})");
+            Console.WriteLine($"→ 送出至 0x{dst:X4}：{sendText} (#{k + 1}, seq={seq})");
             Thread.Sleep(800);
         }
     }

@@ -7,8 +7,8 @@ namespace Gps {
 // 看到合法 NMEA 句子（以 '$' 開頭、含 '*' 校驗分隔）才鎖定，避免被雜訊誤鎖。
 struct Combo { int rx; int tx; uint32_t baud; };
 static const Combo COMBOS[] = {
-    { 4, 5, 9600 }, { 4, 5, 38400 },
-    { 5, 4, 9600 }, { 5, 4, 38400 },
+    { 4, 5, 9600 }, { 4, 5, 38400 }, { 4, 5, 115200 }, { 4, 5, 4800 },
+    { 5, 4, 9600 }, { 5, 4, 38400 }, { 5, 4, 115200 }, { 5, 4, 4800 },
 };
 static const int N_COMBO = sizeof(COMBOS) / sizeof(COMBOS[0]);
 

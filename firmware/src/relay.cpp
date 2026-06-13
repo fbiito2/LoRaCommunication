@@ -1,6 +1,7 @@
 #include "relay.h"
 #include "debug_log.h"
 #include <string.h>
+#include <esp_random.h>  // 轉發隨機退避（硬體亂數）
 
 RelayHandler relayHandler;
 
@@ -41,6 +42,10 @@ bool RelayHandler::process(LoRaPacket& pkt) {
         uint8_t buf[PKT_MAX_LEN];
         size_t len = packetSerialize(pkt, buf, sizeof(buf));
         if (len > 0) {
+            // 轉發隨機退避 0~50ms：密集網路裡多台中繼會「同時」轉發同一封包，
+            // SX1262 半雙工下彼此互撞、把訊息（含重送副本）一起蓋掉。用硬體亂數
+            // esp_random() 讓各台/各次的轉發時間錯開，大幅降低碰撞。
+            delay(esp_random() % 50);
             _sendFn(buf, len);
             _forwardCount++;
             if (!g_usbDataMode) Serial.printf("[Relay] 轉發封包 SRC=0x%04X DST=0x%04X HOP=%d\n",

@@ -24,9 +24,16 @@ public:
 private:
     std::function<void(const uint8_t*, size_t)> _rxCallback;
     WiFiUDP _udp;
-    IPAddress _clientIp;     // 最後一次傳入封包的來源 IP（回傳用）
-    uint16_t  _clientPort = 0;
-    bool      _clientKnown = false;
+
+    // 多 client：收到 LoRa 封包推給「所有」已知 client，不再只推最後一個。
+    // 否則多支手機/工具連同一台 AP 時會互相搶走推送對象（實測踩過：pc-client
+    // 一連就把手機的收訊搶走）。LRU 淘汰最舊、TTL 過期清掉沒活動的。
+    static const int      MAX_CLIENTS   = 4;
+    static const uint32_t CLIENT_TTL_MS = 300000; // 5 分鐘無活動即淘汰
+    struct Client { IPAddress ip; uint16_t port = 0; uint32_t lastMs = 0; };
+    Client _clients[MAX_CLIENTS] = {};
+    void _touchClient(IPAddress ip, uint16_t port); // 記錄/更新來源 client
+
     bool      _apEnabled   = false;
 
     char _ssid[32] = "LoRaPTT";

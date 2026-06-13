@@ -22,7 +22,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.6.1"
+#define FW_VERSION "0.6.2"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，

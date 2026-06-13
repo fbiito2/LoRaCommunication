@@ -27,10 +27,12 @@ public sealed class UsbSerialImpl : IUsbCommService
     private readonly ILogger<UsbSerialImpl> _logger;
 
     private UsbManager? _manager;
+    private UsbDevice? _device;
     private UsbDeviceConnection? _conn;
     private UsbEndpoint? _epIn;
     private UsbEndpoint? _epOut;
     private CancellationTokenSource? _readCts;
+    private BroadcastReceiver? _detachReceiver;
 
     public bool     IsConnected { get; private set; }
     public CommMode Mode        => CommMode.UsbSerial;
@@ -55,6 +57,8 @@ public sealed class UsbSerialImpl : IUsbCommService
             throw new InvalidOperationException("USB 權限被拒絕");
 
         OpenDevice(device);
+        _device = device;
+        RegisterDetachReceiver(); // 監聽拔線（F-054：拔掉裝置 APP 要轉「未連線」）
 
         IsConnected = true;
         OnConnectionChanged?.Invoke(true);
@@ -147,6 +151,53 @@ public sealed class UsbSerialImpl : IUsbCommService
             => _tcs.TrySetResult(intent?.GetBooleanExtra(UsbManager.ExtraPermissionGranted, false) ?? false);
     }
 
+    // ── 拔線偵測：USB_DEVICE_DETACHED 廣播 ──
+    // 修「拔掉 USB 裝置後 APP 仍顯示已連線」：BulkTransfer 在拔線時回 ≤0，原 ReadLoop
+    // 只 continue、永遠不結束，斷線事件不會發。改用系統拔線廣播即時偵測。
+    private void RegisterDetachReceiver()
+    {
+        UnregisterDetachReceiver();
+        _detachReceiver = new DetachReceiver(this);
+        var filter = new IntentFilter(UsbManager.ActionUsbDeviceDetached);
+        AndroidX.Core.Content.ContextCompat.RegisterReceiver(
+            Ctx, _detachReceiver, filter, AndroidX.Core.Content.ContextCompat.ReceiverNotExported);
+    }
+
+    private void UnregisterDetachReceiver()
+    {
+        if (_detachReceiver is null) return;
+        try { Ctx.UnregisterReceiver(_detachReceiver); } catch { /* 已註銷 */ }
+        _detachReceiver = null;
+    }
+
+    /// <summary>拔線/讀取結束的統一清理：標記未連線並通知上層（只會觸發一次）。</summary>
+    private void HandleDisconnect(string reason)
+    {
+        _readCts?.Cancel();
+        try { _conn?.Close(); } catch { /* ignore */ }
+        _conn = null; _epIn = null; _epOut = null;
+        UnregisterDetachReceiver();
+        if (IsConnected)
+        {
+            IsConnected = false;
+            _logger.LogInformation("USB 斷線：{Reason}", reason);
+            OnConnectionChanged?.Invoke(false);
+        }
+    }
+
+    private sealed class DetachReceiver : BroadcastReceiver
+    {
+        private readonly UsbSerialImpl _owner;
+        public DetachReceiver(UsbSerialImpl owner) => _owner = owner;
+        public override void OnReceive(Context? context, Intent? intent)
+        {
+            var dev = intent?.GetParcelableExtra(UsbManager.ExtraDevice) as UsbDevice;
+            // 拔掉的就是我們連的那台（拿不到裝置資訊時亦一律視為斷線處理）
+            if (dev is null || _owner._device is null || dev.DeviceId == _owner._device.DeviceId)
+                _owner.HandleDisconnect("USB 裝置已拔除");
+        }
+    }
+
     // ── 收訊：bulk read → 累積 → 重同步抽幀 [len][LinkFrame] ──
     private void ReadLoop(CancellationToken ct)
     {
@@ -165,7 +216,7 @@ public sealed class UsbSerialImpl : IUsbCommService
         catch (Exception ex) { _logger.LogWarning(ex, "USB 讀取迴圈結束"); }
         finally
         {
-            if (IsConnected) { IsConnected = false; OnConnectionChanged?.Invoke(false); }
+            HandleDisconnect("讀取迴圈結束");
         }
     }
 
@@ -202,10 +253,7 @@ public sealed class UsbSerialImpl : IUsbCommService
 
     public Task DisconnectAsync()
     {
-        _readCts?.Cancel();
-        try { _conn?.Close(); } catch { /* ignore */ }
-        _conn = null; _epIn = null; _epOut = null;
-        if (IsConnected) { IsConnected = false; OnConnectionChanged?.Invoke(false); }
+        HandleDisconnect("手動斷線");
         return Task.CompletedTask;
     }
 }

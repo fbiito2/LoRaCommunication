@@ -214,3 +214,30 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
   - 筆電 WiFi 連 C6L 要指定 `interface="Wi-Fi 2"`；多 AP 同為 192.168.4.x，一次只連一台避免衝突。
 - **版本現況**：**三台齊一 = FW 0.5.2**（CDB8 / BF8C / D400 皆已升並實機驗證）。
   CDB8→D400 點對點：D400 每收一份回一個 ACK（×3，RSSI −25~−27），手機 App 顯示「0xCDB8 → …」。
+
+---
+
+## 十、2026-06-13 假日：GPS 整合 + USB 拔線修正（多台到位）
+
+### 裝置現況（共 4 台）
+- **CDB8、BF8C、D400、D078**（新燒 D078=ID 0xD078）。FW：**BF8C=0.6.0（含 GPS）**，CDB8/D400/D078=0.5.2（無 GPS 模組，未急升）。
+- 互發實測：CDB8/BF8C/D078 → D400 點對點皆通、D400 回 ACK、手機顯示。
+
+### GPS 整合（M5 GPS Unit U032 / AT6668）— ✅ 實機定位成功
+- **接法**：M5 原廠 Grove 排線插 C6L Grove PORT.A。**GPS TXD→C6L GPIO4(RX)**、RXD→GPIO5(TX)。
+- **關鍵雷：U032 出廠鮑率是 `115200`**（非常見 9600/38400）。錯鮑率下 framing error 把資料丟光、`gps_bytes` 幾乎不動 → 誤判沒接。
+- 韌體 `gps.h/.cpp`：Serial1 讀 NMEA、解析 GGA，**自動輪試 4 腳位×4 鮑率(8 組合)**，看到 `$…*` 合法句才鎖定。實機鎖定 **GPIO4@115200**，定位成功（北緯 25.19、東經 121.44、8~9 衛星）。
+- `/version` 增 `gps_fix/gps_sats/gps_lat/gps_lon/gps_bytes/gps_baud/gps_rx`，WiFi 即可遙測定位。
+- **SOS 接 C6L GPS**（FW 0.6.0）：實體按鈕 SOS 有 fix 時 payload 附 `[Lat 8B][Lon 8B]`（小端，對齊 APP `OnSosReceived` lat@2/lon@10）→ **不靠手機也能報座標**。實機：BF8C 連按 3 下 → 手機 SOS 警報帶出座標 ✅。
+- **OLED GPS 頁**（第 5 頁，短按輪到）：`GPS FIX / sat:N / 緯度 / 經度`。64×48 每行約 10 字，6 位小數座標**剛好一行放得下**（有 `lat:` 前綴就會超寬，故座標獨佔整行、不加前綴）。實機顯示完整不截字 ✅。
+- 觸發 SOS = **連按按鈕 3 下**（F-071，`Button::onTriplePress`）。
+
+### USB 拔線偵測修正（APP，commit `8a61b2f`）— ✅ 驗證通過
+- **症狀**：手機拔掉 USB 裝置後 App 仍顯示「已連線」。
+- **根因**：`UsbSerialImpl.ReadLoop` 的 `BulkTransfer` 拔線時回 ≤0，原碼只 `continue` 永不結束 → 斷線事件不發。
+- **修法**：`ConnectAsync` 註冊系統 `USB_DEVICE_DETACHED` 廣播 → 拔線即 `HandleDisconnect()`（標記未連線、取消讀迴圈、發 `OnConnectionChanged(false)`）。ReadLoop finally / DisconnectAsync 統一走 HandleDisconnect。
+- 驗證：拔掉→「未連線」、接回按連線→可連 ✅。
+
+### 後期（backlog，未做）
+- **定期廣播自身 GPS 位置**（節點互相在地圖上看到彼此）：用 TYPE 感測/位置封包定時廣播 lat/lon。等核心穩定後再做。
+- CDB8/D400/D078 視需要升 0.6.0（目前無 GPS 模組，非必要）。

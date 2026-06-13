@@ -252,3 +252,14 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
   `netsh advfirewall firewall add rule name="LoRaPTT-UDP-in" dir=in action=allow protocol=UDP remoteip=192.168.4.0/24`
 - **另：每台燒完/重開後要等它「跑穩」**（OLED 有畫面、`/version` 的 loops 正常爬升）**再測**；
   剛重開的暫態會 rx=0、收不到，別誤判成壞掉。
+
+### Mesh 可靠性修正（2026-06-13，✅ 實機驗證）
+- **發送端 SEQ 隨機起始**（`MessagingService._seq` / pc-client `seqCounter`）：原本每次開 App/執行都從 1 開始，
+  重啟後送的 `(SrcId,Seq)` 與接收端去重快取的舊紀錄相同 → **被當重複丟棄、訊息不顯示**（CDB8 有響=有收到，
+  但手機去重擋掉）。改隨機高起始值即解。
+- **pc-client 送 3 份改用同一 SEQ**（對齊 App `SendTextAsync`）：原本各份不同 SEQ → 接收端不去重 → 同訊息顯示多次。
+- **🔑 relay 轉發隨機退避 0~50ms（`relay.cpp`，FW 0.6.1）**：密集部署(多台在直連範圍內)時，每則廣播會讓所有
+  中繼「同時」轉發 → SX1262 半雙工互撞、把訊息含重送副本一起蓋掉。實測 **4 台桌面：加退避前「3 則只到 1 則」、
+  加退避後「5 則全到」**。`esp_random()%50` 把各台轉發時間錯開。
+  → **越擠越糟**（與「拉開測多跳」直覺相反）；退避是密集網路的關鍵改善，對真實部署也有用。
+- 版本：四台皆 **FW 0.6.1**。

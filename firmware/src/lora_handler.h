@@ -14,10 +14,14 @@
 // 注意：RF 開關由 SX1262 DIO2 內建控制（setDio2AsRfSwitch），
 //       TCXO 由 DIO3 供電 3.0V；不再使用外部 ANT_SW / LNA GPIO。
 
-// ── LoRa 通訊參數（SF7 + BW500 → 高速，語音用）────────────
+// ── LoRa 通訊參數（SF9 + BW125 → 長距離，文字/SOS/探測用）────────────
+// 註：原為 SF7/BW500（最快但最短距，室內 30m 穿牆即收不到）。改 SF9/BW125 約 +10dB
+// 靈敏度，室內穿牆/戶外數百公尺大幅改善；代價是速率降到 ~1.8kbps（每包約 0.3-0.4s），
+// 對文字/SOS/探測足夠。語音(Phase 4，2400bps)塞不下此設定，屆時需另做長/短距模式切換。
+// ⚠ 全部節點 SF/BW 必須一致，否則彼此收不到。
 #define LORA_FREQ       920.0f  // MHz（台灣 ISM）
-#define LORA_BW         500.0f  // kHz
-#define LORA_SF         7
+#define LORA_BW         125.0f  // kHz
+#define LORA_SF         9
 #define LORA_CR         5       // 4/5
 #define LORA_SYNC_WORD  0x12    // Private network
 #define LORA_TX_POWER   22      // dBm

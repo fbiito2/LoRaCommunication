@@ -280,7 +280,12 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
   收訊搶走**（自己製造的假象，浪費大量時間）。
 - **修法**（commit `f92f705`，FW 0.6.2）：`wifi_service` 改 **client 清單**（MAX 4、LRU 淘汰、5 分鐘 TTL）；
   收到封包就記進清單，`send()` **推給清單裡全部 client**。多支裝置連同一台 AP 都收得到、不互搶。
-- **狀態**：D078、D400 已燒 0.6.2；**CDB8、BF8C 待補**（當時沒接 USB）。
+- **狀態**：CDB8/BF8C/D400/D078 **四台全燒 0.6.2**。
+- **⚠ TTL 的副作用（必記）**：多 client 清單 **5 分鐘 TTL，只認 UDP port 5000 的活動**。
+  client 閒置不送 UDP → 5 分鐘被剔除 → 收不到，要再送東西(或重按連線)才恢復。
+  **HTTP `GET /version`(TCP) 心跳不算數**（不同 socket，不更新 UDP 註冊）。
+  → 解：每個 client 週期送 **UDP keepalive**（1 byte `0x00`）：pc-gui 加 60s Timer；
+  手機 App 在心跳迴圈(每 4s)順帶送 UDP。Windows 端同時也保住防火牆 UDP 回程映射。
 - **debug 鐵則補充**：診斷時**別把 pc-client/HTTP 以外的 UDP client 連到「手機正在用的那台 C6L」**
   （舊韌體會搶槽）；要嘛用多 client 的 0.6.2，要嘛連「不同的節點」。
 - **附帶**：S25 可同時當 C6L 的 WiFi client + 開熱點給 PC → PC adb-over-wifi 連手機(`adb connect <hotspot-gw>:5555`)，

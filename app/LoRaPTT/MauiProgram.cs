@@ -30,8 +30,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<IUsbCommService, UsbSerialImpl>();
         // 背景保活：前景服務 + WifiLock + WakeLock（螢幕關閉也持續收訊）
         builder.Services.AddSingleton<IBackgroundKeepAlive, Platforms.Android.BackgroundKeepAliveImpl>();
+        // 來訊提示：高重要度通知頻道（聲音 + 震動）
+        builder.Services.AddSingleton<INotifier, Platforms.Android.NotifierImpl>();
 #else
         builder.Services.AddSingleton<IBackgroundKeepAlive, NoOpBackgroundKeepAlive>();
+        builder.Services.AddSingleton<INotifier, NoOpNotifier>();
 #endif
         builder.Services.AddSingleton<ICommService, CommRouter>();
 

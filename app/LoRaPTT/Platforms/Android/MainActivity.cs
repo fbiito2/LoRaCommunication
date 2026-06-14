@@ -13,6 +13,12 @@ namespace LoRaPTT;
 [Activity(Theme = "@style/Maui.SplashTheme", MainLauncher = true, WindowSoftInputMode = SoftInput.AdjustResize, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public class MainActivity : MauiAppCompatActivity
 {
+    /// <summary>App 是否在前景（介於 OnResume~OnPause）。背景來訊才跳通知用。</summary>
+    public static bool IsForeground { get; private set; }
+
+    protected override void OnResume() { base.OnResume(); IsForeground = true; }
+    protected override void OnPause()  { base.OnPause();  IsForeground = false; }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);

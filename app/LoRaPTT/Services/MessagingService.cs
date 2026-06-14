@@ -20,6 +20,7 @@ public sealed class MessagingService : IMessagingService
 
     private readonly ICommService _comm;
     private readonly ILogger<MessagingService> _logger;
+    private readonly INotifier _notifier;
     private readonly DedupCache _dedup = new(128);
 
     // 隨機高起始值：否則每次開 App 都從 1 開始，重啟後送的封包 (SrcId,Seq) 會與
@@ -37,10 +38,11 @@ public sealed class MessagingService : IMessagingService
     /// <summary>收到 SOS 緊急求救（F-073）。參數：發送者 ID、GPS payload（可能為空）</summary>
     public event Action<ushort, byte[]>? SosReceived;
 
-    public MessagingService(ICommService comm, ILogger<MessagingService> logger)
+    public MessagingService(ICommService comm, ILogger<MessagingService> logger, INotifier notifier)
     {
         _comm = comm;
         _logger = logger;
+        _notifier = notifier;
         _comm.OnDataReceived += OnDataReceived;
         _comm.OnConnectionChanged += OnConnectionChanged;
     }
@@ -217,6 +219,9 @@ public sealed class MessagingService : IMessagingService
         };
         MessageReceived?.Invoke(msg);
 
+        // 背景（螢幕關／不在前景）來訊提示：跳通知 + 震動
+        _notifier.NotifyMessage($"0x{pkt.SrcId:X4}", msg.Text, sos: false);
+
         // 點對點訊息需回 ACK；廣播/群組不回
         if (DstId.IsUnicast(pkt.DstId))
             _ = SendAckAsync(pkt.SrcId, pkt.Seq);
@@ -286,6 +291,7 @@ public sealed class MessagingService : IMessagingService
     private void HandleSos(LoRaPacket pkt)
     {
         _logger.LogWarning("!!! 收到 SOS 緊急求救！來自 0x{Src:X4}", pkt.SrcId);
+        _notifier.NotifyMessage($"0x{pkt.SrcId:X4}", "緊急求救！", sos: true);
         SosReceived?.Invoke(pkt.SrcId, pkt.Payload);
     }
 

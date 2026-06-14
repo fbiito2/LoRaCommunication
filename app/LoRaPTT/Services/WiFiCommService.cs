@@ -100,6 +100,16 @@ public class WiFiCommService : ICommService
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(4), ct);
+
+                // UDP 心跳：HTTP /version 走 TCP，不會更新 C6L 的 UDP client 註冊。
+                // 少了這個，手機閒置 5 分鐘(C6L 多 client 清單 TTL)就會被剔除而收不到訊息。
+                try
+                {
+                    if (_udp != null && _remoteEp != null)
+                        await _udp.SendAsync(new byte[] { 0x00 }, 1, _remoteEp).WaitAsync(ct);
+                }
+                catch { /* 送失敗就交給下方 HTTP 心跳判定離線 */ }
+
                 bool ok;
                 try
                 {

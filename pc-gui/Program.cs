@@ -36,6 +36,7 @@ public sealed class MainForm : Form
 
     private UdpClient? _udp;
     private CancellationTokenSource? _cts;
+    private System.Threading.Timer? _keepAlive; // 閒置心跳：免得 C6L(5分TTL)/防火牆把連線當過期
     private int _seq;
 
     public MainForm()
@@ -89,7 +90,7 @@ public sealed class MainForm : Form
         Controls.Add(bottom);
         Controls.Add(top);
 
-        FormClosing += (_, _) => { _cts?.Cancel(); _udp?.Close(); };
+        FormClosing += (_, _) => { _keepAlive?.Dispose(); _cts?.Cancel(); _udp?.Close(); };
     }
 
     private ushort NextSeq() => (ushort)(Interlocked.Increment(ref _seq) & 0xFFFF);
@@ -124,6 +125,13 @@ public sealed class MainForm : Form
             udp.Send(new byte[] { 0x00 }, 1); // 註冊封包，讓 C6L 記住本機 IP
             SendLink(LinkFrame.WrapCtrl("{\"cmd\":\"hello\",\"name\":\"PC\"}"));
             AppendLog($"→ 連線 {_ip.Text}:5000，已送握手 hello");
+
+            // 每 60 秒送 1 byte 心跳：閒置時也能維持在 C6L client 清單裡，
+            // 並讓 Windows 防火牆的 UDP 回程映射保持開啟，免得「一段時間沒動作就收不到、要重按連線」。
+            _keepAlive?.Dispose();
+            _keepAlive = new System.Threading.Timer(
+                _ => { try { udp.Send(new byte[] { 0x00 }, 1); } catch { /* 已斷線，忽略 */ } },
+                null, 60_000, 60_000);
         }
         catch (Exception ex) { AppendLog("連線失敗：" + ex.Message); }
     }

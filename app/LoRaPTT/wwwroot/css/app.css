@@ -7,13 +7,31 @@ html, body, #app {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
-/* 補完高度鏈：讓 ChatPage 的 height:100% 能一路撐到 WebView 實際高度 */
+/* 補完高度鏈：讓 ChatPage 的 height:100% 能一路撐到 WebView 實際高度。
+   關鍵——原本斷在 <main>（無高度），導致 ChatPage 的 height:100% 算不出實際高度，
+   整頁被訊息撐高、輸入框被擠出畫面。改成一路 flex 撐滿視窗，畫面高度=視窗高。 */
 .page {
+    display: flex;
+    flex-direction: column;
     height: 100%;
 }
 
+/* NavMenu：自然高度，不被壓縮 */
+.sidebar {
+    flex: 0 0 auto;
+}
+
+/* main 撐滿 NavMenu 以下的剩餘空間，並讓內部子元素能正確捲動（min-height:0） */
+main {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .content {
-    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
     padding-top: 0;
 }
 

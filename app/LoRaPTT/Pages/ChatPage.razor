@@ -3,6 +3,7 @@
 @using LoRaPTT.Models
 @using LoRaPTT.ViewModels
 @inject ChatViewModel VM
+@inject IJSRuntime JS
 @implements IDisposable
 
 <div class="d-flex flex-column bg-dark text-white" style="height:100%">
@@ -228,8 +229,9 @@
         </div>
     }
 
-    <!-- 訊息列表 -->
-    <div class="flex-grow-1 overflow-auto p-2" id="msg-list">
+    <!-- 訊息列表（唯一會捲動的區域；min-height:0 讓它在 flex 直向裡能正確捲動，
+         訊息再多也只在此區捲動，不會把下方輸入框推出畫面）-->
+    <div class="flex-grow-1 overflow-auto p-2" id="msg-list" style="min-height:0">
         @if (VM.Messages.Count == 0)
         {
             <div class="text-center mt-4">
@@ -333,6 +335,8 @@
 </style>
 
 @code {
+    private int _lastMsgCount = -1; // 追蹤訊息數，變多時自動捲到底
+
     protected override void OnInitialized()
     {
         VM.StateChanged += OnVmChanged;
@@ -343,6 +347,17 @@
     private async void OnVmChanged()
     {
         await InvokeAsync(StateHasChanged);
+    }
+
+    // 訊息數增加（收到/送出新訊息）時，自動把訊息列捲到最新一則，像 Line
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (VM.Messages.Count != _lastMsgCount)
+        {
+            _lastMsgCount = VM.Messages.Count;
+            try { await JS.InvokeVoidAsync("scrollToBottom", "msg-list"); }
+            catch { /* JS 尚未就緒時忽略，下次 render 會再捲 */ }
+        }
     }
 
     private async Task Connect() => await VM.ConnectCommand.ExecuteAsync(null);

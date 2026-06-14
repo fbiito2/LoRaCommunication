@@ -24,6 +24,14 @@
 
     <script src="_framework/blazor.webview.js" autostart="false"></script>
 
+    <script>
+        // 將指定容器捲到最底（聊天收到新訊息時自動滑到最新，像 Line）
+        window.scrollToBottom = function (id) {
+            var el = document.getElementById(id);
+            if (el) el.scrollTop = el.scrollHeight;
+        };
+    </script>
+
 </body>
 
 </html>

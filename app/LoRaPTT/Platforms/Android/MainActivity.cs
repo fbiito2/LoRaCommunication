@@ -3,6 +3,7 @@ using Android.Content;
 using Android.Content.PM;
 using Android.Net;
 using Android.OS;
+using Android.Provider;
 using Android.Views;
 using AndroidX.Core.View;
 
@@ -22,6 +23,37 @@ public class MainActivity : MauiAppCompatActivity
         if (content != null)
             ViewCompat.SetOnApplyWindowInsetsListener(content, new ImeInsetsListener());
         BindToWifiNetwork();
+        RequestBackgroundExemptions();
+    }
+
+    // 背景保活的前置授權：①電池最佳化豁免（Samsung Doze 會殺背景行程）②通知權限
+    // （Android 13+ 前景服務通知才看得到；就算不准,服務仍會跑、收訊不受影響）。
+    private void RequestBackgroundExemptions()
+    {
+        try
+        {
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.M)
+            {
+                var pm = (PowerManager?)GetSystemService(PowerService);
+                if (pm != null && PackageName != null && !pm.IsIgnoringBatteryOptimizations(PackageName))
+                {
+                    var i = new Intent(Settings.ActionRequestIgnoreBatteryOptimizations);
+                    i.SetData(global::Android.Net.Uri.Parse("package:" + PackageName));
+                    i.AddFlags(ActivityFlags.NewTask);
+                    StartActivity(i);
+                }
+            }
+
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu
+                && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted)
+            {
+                RequestPermissions(new[] { "android.permission.POST_NOTIFICATIONS" }, 100);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            System.Console.WriteLine("LPTT: RequestBackgroundExemptions 失敗: " + ex.Message);
+        }
     }
 
     // 把鍵盤高度套成內容底部 padding；鍵盤收起時為 0（同時保留導覽列高度避免內容被遮）

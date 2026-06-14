@@ -10,12 +10,14 @@ public sealed class CommRouter : ICommService
 {
     private readonly WiFiCommService _wifi;
     private readonly IUsbCommService? _usb;
+    private readonly IBackgroundKeepAlive _keepAlive;
     private ICommService _active;
 
-    public CommRouter(WiFiCommService wifi, IEnumerable<IUsbCommService> usb)
+    public CommRouter(WiFiCommService wifi, IEnumerable<IUsbCommService> usb, IBackgroundKeepAlive keepAlive)
     {
         _wifi = wifi;
         _usb = usb.FirstOrDefault();   // 非 Android 平台為空
+        _keepAlive = keepAlive;
         _active = wifi;
 
         Hook(_wifi);
@@ -25,7 +27,13 @@ public sealed class CommRouter : ICommService
     private void Hook(ICommService s)
     {
         s.OnDataReceived      += d => { if (ReferenceEquals(s, _active)) OnDataReceived?.Invoke(d); };
-        s.OnConnectionChanged += c => { if (ReferenceEquals(s, _active)) OnConnectionChanged?.Invoke(c); };
+        s.OnConnectionChanged += c =>
+        {
+            if (!ReferenceEquals(s, _active)) return;
+            // 連線狀態驅動背景保活：連上→啟動前景服務維持收訊；斷線→停止
+            if (c) _keepAlive.Start(); else _keepAlive.Stop();
+            OnConnectionChanged?.Invoke(c);
+        };
     }
 
     public bool     IsConnected => _active.IsConnected;

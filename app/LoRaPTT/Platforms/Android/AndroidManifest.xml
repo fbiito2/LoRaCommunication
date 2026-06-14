@@ -8,4 +8,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- F-054 USB OTG：手機 USB-C 直連 C6L 的 USB CDC 傳資料 -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <!-- 背景保活：前景服務 + WifiLock/WakeLock + 電池最佳化豁免（螢幕關閉仍持續收訊）-->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 </manifest>

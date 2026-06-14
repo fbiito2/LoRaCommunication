@@ -271,3 +271,17 @@ git 基準鎖 net7 + SDK 7.0.400。一台「只有新 SDK」的機器要能 buil
 - **雙向 + 內文 + ACK**：手機→「d078」→ D078，pc-client(當 D078 端點)讀到內文「d078」並回 ACK×3（手機顯示✓✓）；
   D078→「D078-REPLY-OK」→ 手機顯示。**雙向訊息、ACK、中繼接力全部跑通。**
 - pc-client 監聽(入站 UDP)**時通時擋**：防火牆 stateful 有時放行回程、有時擋；要穩定需管理員加入站規則（見上）。
+
+### 🔑🔑 最大根因：C6L WiFi 單 client → 已改多 client（FW 0.6.2）
+- **症狀**：手機/pc-gui「斷斷續續、收不到、握手當下能收之後就沒」。耗一整天才揪出。
+- **根因**：原 `wifi_service` 只記「**最後一個傳 UDP 給它的 client**」（`_clientIp/_clientPort`），
+  收到 LoRa 只推那一個。**多支 client（手機+pc-gui+pc-client）連同一台 AP 時互相搶推送對象**
+  → 後連的搶走、先連的就收不到。**debug 期間反覆跑 pc-client 連同一台 C6L = 一直把手機/pc-gui 的
+  收訊搶走**（自己製造的假象，浪費大量時間）。
+- **修法**（commit `f92f705`，FW 0.6.2）：`wifi_service` 改 **client 清單**（MAX 4、LRU 淘汰、5 分鐘 TTL）；
+  收到封包就記進清單，`send()` **推給清單裡全部 client**。多支裝置連同一台 AP 都收得到、不互搶。
+- **狀態**：D078、D400 已燒 0.6.2；**CDB8、BF8C 待補**（當時沒接 USB）。
+- **debug 鐵則補充**：診斷時**別把 pc-client/HTTP 以外的 UDP client 連到「手機正在用的那台 C6L」**
+  （舊韌體會搶槽）；要嘛用多 client 的 0.6.2，要嘛連「不同的節點」。
+- **附帶**：S25 可同時當 C6L 的 WiFi client + 開熱點給 PC → PC adb-over-wifi 連手機(`adb connect <hotspot-gw>:5555`)，
+  能驅動手機又不佔 C6L 的 client 槽，是乾淨的觀測法。

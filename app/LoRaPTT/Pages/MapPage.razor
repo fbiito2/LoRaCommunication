@@ -22,6 +22,7 @@
         <button class="map-btn" @onclick="ToggleList" title="節點清單"><span class="oi oi-people"></span></button>
         <button class="map-btn" @onclick="ToggleBaseAsync" title="@(_satellite ? "切換街道圖" : "切換衛星圖")"><span class="oi oi-layers"></span></button>
         <button class="map-btn @(_radar ? "active" : "")" @onclick="ToggleRadarAsync" title="氣象雷達"><span class="oi oi-rain"></span></button>
+        <button class="map-btn" @onclick="DownloadCurrentViewAsync" disabled="@_downloading" title="下載此區衛星圖(離線用)"><span class="oi oi-cloud-download"></span></button>
     </div>
 
     <!-- 右下角資訊浮卡（半透明，直排）：進來顯示自己；點 marker 顯示該節點 -->
@@ -44,6 +45,18 @@
             }
         }
     </div>
+
+    <!-- 下載進度條（底部半透明，F-037 階段二）-->
+    @if (_downloading)
+    {
+        <div class="map-dl">
+            <div class="map-dl-bar"><div class="map-dl-fill" style="width:@(DlPercent)%"></div></div>
+            <div class="map-dl-text">
+                <span>下載衛星圖 @_dlDone / @_dlTotal（約 @DlMb MB）</span>
+                <button class="map-dl-cancel" @onclick="CancelDownload">✕</button>
+            </div>
+        </div>
+    }
 
     <!-- 節點清單 dialog（地圖頁主清單）-->
     @if (_showList)
@@ -98,6 +111,11 @@
     .map-dialog-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 20; display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; }
     .map-dialog { background: #1a1d22; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 14px; width: 90%; max-width: 420px; max-height: 70vh; overflow: auto; }
     .map-node-row { padding: 8px 6px; border-bottom: 1px solid #2a2d33; cursor: pointer; }
+    .map-dl { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 15; background: rgba(15,18,22,0.7); border-radius: 8px; padding: 8px 12px; backdrop-filter: blur(4px); }
+    .map-dl-bar { height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden; }
+    .map-dl-fill { height: 100%; background: #0d6efd; transition: width 0.2s; }
+    .map-dl-text { font-size: 0.75rem; color: #fff; margin-top: 5px; display: flex; align-items: center; }
+    .map-dl-cancel { margin-left: auto; background: none; border: none; color: #fff; font-size: 0.9rem; cursor: pointer; padding: 0 4px; }
     .lora-self-dot { width: 18px; height: 18px; border-radius: 50%; background: #00e5ff; border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,229,255,0.8); cursor: pointer; }
     .lora-node-dot { width: 16px; height: 16px; border-radius: 50%; background: #ffc107; border: 2px solid #fff; box-shadow: 0 0 6px rgba(0,0,0,0.6); cursor: pointer; }
 </style>
@@ -107,6 +125,12 @@
     private bool _showList;                          // 節點清單 dialog 開關
     private bool _satellite;                         // 底圖是否為衛星(NLSC)
     private bool _radar;                             // CWA 雷達疊加是否開啟
+    private bool _downloading;                        // 是否正在下載離線圖磚
+    private int _dlDone, _dlTotal;                    // 下載進度（已完成/總數）
+    private CancellationTokenSource? _dlCts;          // 下載取消權杖
+
+    private int DlPercent => _dlTotal > 0 ? _dlDone * 100 / _dlTotal : 0;
+    private int DlMb => (int)Math.Round(_dlTotal * 25.0 / 1024.0); // 估約 25KB/張
     private CardInfo? _card;                         // 下方浮卡內容
     private double _selfLat, _selfLon;               // 自身座標（手機 GPS）
     private double? _selfAlt, _selfCourse;           // 自身高度（公尺）與方位（度）
@@ -297,6 +321,97 @@
         {
             return null; // 離線且未下載，或抓取失敗 → 空白圖磚
         }
+    }
+
+    /// <summary>地圖視野範圍（供「下載目前畫面」）</summary>
+    private sealed class MapView
+    {
+        public double MinLon { get; set; }
+        public double MinLat { get; set; }
+        public double MaxLon { get; set; }
+        public double MaxLat { get; set; }
+        public int Zoom { get; set; }
+    }
+
+    /// <summary>下載目前畫面範圍的衛星圖磚（目前縮放 ~ z16）到本機，供離線使用。重下載＝覆蓋更新。</summary>
+    private async Task DownloadCurrentViewAsync()
+    {
+        if (_downloading) return;
+        var view = await JS.InvokeAsync<MapView?>("loraMap.getView");
+        if (view is null) return;
+
+        int zMin = Math.Clamp(view.Zoom, 0, 16);
+        var tiles = EnumerateTiles(view, zMin, 16);
+        if (tiles.Count == 0) return;
+
+        _dlTotal = tiles.Count; _dlDone = 0;
+        _downloading = true;
+        _dlCts = new CancellationTokenSource();
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            foreach (var (z, x, y) in tiles)
+            {
+                if (_dlCts.IsCancellationRequested) break;
+                await FetchAndSaveTileAsync(z, x, y, _dlCts.Token);
+                _dlDone++;
+                if (_dlDone % 8 == 0) await InvokeAsync(StateHasChanged); // 每 8 張刷新進度
+            }
+        }
+        catch (OperationCanceledException) { /* 使用者取消 */ }
+        catch (Exception ex) { Console.WriteLine("LPTT: 下載中斷: " + ex.Message); }
+        finally
+        {
+            _downloading = false;
+            _dlCts?.Dispose(); _dlCts = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>取消下載</summary>
+    private void CancelDownload() => _dlCts?.Cancel();
+
+    /// <summary>列出視野範圍內各縮放層級的圖磚座標</summary>
+    private static List<(int z, int x, int y)> EnumerateTiles(MapView v, int zMin, int zMax)
+    {
+        var list = new List<(int, int, int)>();
+        for (int z = zMin; z <= zMax; z++)
+        {
+            int n = 1 << z;
+            int xMin = Math.Clamp(Lon2X(v.MinLon, z), 0, n - 1);
+            int xMax = Math.Clamp(Lon2X(v.MaxLon, z), 0, n - 1);
+            int yMin = Math.Clamp(Lat2Y(v.MaxLat, z), 0, n - 1); // 緯度大 → y 小
+            int yMax = Math.Clamp(Lat2Y(v.MinLat, z), 0, n - 1);
+            for (int x = xMin; x <= xMax; x++)
+                for (int y = yMin; y <= yMax; y++)
+                    list.Add((z, x, y));
+        }
+        return list;
+    }
+
+    /// <summary>經度 → 圖磚 X（Web Mercator）</summary>
+    private static int Lon2X(double lon, int z) => (int)Math.Floor((lon + 180.0) / 360.0 * (1 << z));
+
+    /// <summary>緯度 → 圖磚 Y（Web Mercator）</summary>
+    private static int Lat2Y(double lat, int z)
+    {
+        double r = lat * Math.PI / 180.0;
+        return (int)Math.Floor((1 - Math.Log(Math.Tan(r) + 1 / Math.Cos(r)) / Math.PI) / 2 * (1 << z));
+    }
+
+    /// <summary>抓單張 NLSC 衛星圖磚並存到本機（覆蓋＝更新）</summary>
+    private async Task FetchAndSaveTileAsync(int z, int x, int y, CancellationToken ct)
+    {
+        try
+        {
+            var url = $"https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}";
+            var bytes = await _http.GetByteArrayAsync(url, ct);
+            var path = TilePath(z, x, y);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllBytesAsync(path, bytes, ct);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { /* 單張失敗略過，不中斷整批 */ }
     }
 
     /// <summary>廣播 PING 主動探測</summary>

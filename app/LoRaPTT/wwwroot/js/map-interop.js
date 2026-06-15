@@ -10,15 +10,30 @@
         // 初始化地圖。dotnet=DotNetObjectReference，lat/lon=初始中心，hasSelf=是否已有自身定位
         init: function (dotnet, lat, lon, hasSelf) {
             dotNetRef = dotnet;
+            if (typeof maplibregl === 'undefined') {
+                console.error('[loraMap] maplibre-gl.js 未載入');
+                return;
+            }
             if (map) { try { map.remove(); } catch (e) { } map = null; }
             const center = hasSelf ? [lon, lat] : [121.5, 25.05]; // 無定位時預設台北
-            map = new maplibregl.Map({
-                container: 'lora-map',
-                style: 'https://tiles.openfreemap.org/styles/liberty',
-                center: center,
-                zoom: 14
+            try {
+                map = new maplibregl.Map({
+                    container: 'lora-map',
+                    style: 'https://tiles.openfreemap.org/styles/liberty',
+                    center: center,
+                    zoom: 14
+                });
+            } catch (e) {
+                console.error('[loraMap] 建立地圖失敗:', e && e.message);
+                return;
+            }
+            map.on('load', function () { console.log('[loraMap] style 載入完成'); });
+            map.on('error', function (e) {
+                console.error('[loraMap] 地圖錯誤:', (e && e.error && e.error.message) || e);
             });
             map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-left');
+            // 容器初始尺寸可能尚未定案 → 延遲 resize，避免空白/半截
+            setTimeout(function () { if (map) { map.resize(); } }, 400);
             if (hasSelf) { this.setSelf(lat, lon); }
         },
 

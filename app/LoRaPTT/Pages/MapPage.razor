@@ -19,7 +19,7 @@
         <button class="map-btn" @onclick="ToggleList" title="節點清單">☰</button>
     </div>
 
-    <!-- 下方資訊浮卡（半透明）：進來顯示自己；點 marker 顯示該節點 -->
+    <!-- 右下角資訊浮卡（半透明，直排）：進來顯示自己；點 marker 顯示該節點 -->
     <div class="map-card">
         @if (_card is null)
         {
@@ -27,14 +27,15 @@
         }
         else
         {
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="fw-bold @(_card.IsSelf ? "text-info" : "text-warning")">@_card.Title</span>
-                <span class="small @(_card.Ok ? "text-success" : "text-danger")">@_card.Status</span>
-            </div>
-            <div class="small">@_card.Coords</div>
-            @if (!string.IsNullOrEmpty(_card.Sub))
+            <div class="mc-status @(_card.StatusError ? "text-danger" : "text-success")">@_card.Status</div>
+            <div class="mc-name">@_card.Name</div>
+            <div class="mc-coords">@_card.Coords</div>
+            @if (!string.IsNullOrEmpty(_card.BottomLeft) || !string.IsNullOrEmpty(_card.BottomRight))
             {
-                <div class="small text-muted">@_card.Sub</div>
+                <div class="mc-bottom">
+                    <span>@_card.BottomLeft</span>
+                    <span>@_card.BottomRight</span>
+                </div>
             }
         }
     </div>
@@ -78,12 +79,16 @@
 
 <style>
     /* 版面與 marker 樣式（放頁內 style = 全域，才套得到 JS 動態建立的 marker div）*/
-    .map-root { position: relative; width: 100%; height: 100vh; background: #20242b; overflow: hidden; }
+    .map-root { position: relative; width: 100%; height: 100%; background: #20242b; overflow: hidden; }
     .map-canvas { position: absolute; inset: 0; }
     .map-tools { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
     .map-btn { width: 44px; height: 44px; border: none; border-radius: 8px; background: rgba(20,20,25,0.85); color: #fff; font-size: 1.25rem; cursor: pointer; }
     .map-btn:active { background: rgba(60,60,70,0.9); }
-    .map-card { position: absolute; left: 12px; right: 12px; bottom: 16px; z-index: 10; background: rgba(15,18,22,0.82); color: #fff; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 10px 14px; backdrop-filter: blur(4px); }
+    .map-card { position: absolute; right: 12px; bottom: 24px; z-index: 10; background: rgba(15,18,22,0.82); color: #fff; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 8px 12px; min-width: 190px; max-width: 72%; backdrop-filter: blur(4px); }
+    .mc-status { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em; }
+    .mc-name { font-size: 1.05rem; font-weight: 700; line-height: 1.2; }
+    .mc-coords { font-size: 0.85rem; }
+    .mc-bottom { display: flex; justify-content: space-between; gap: 16px; font-size: 0.85rem; color: #ccd6dd; margin-top: 2px; }
     .map-dialog-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 20; display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; }
     .map-dialog { background: #1a1d22; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 14px; width: 90%; max-width: 420px; max-height: 70vh; overflow: auto; }
     .map-node-row { padding: 8px 6px; border-bottom: 1px solid #2a2d33; cursor: pointer; }
@@ -96,17 +101,18 @@
     private bool _showList;                          // 節點清單 dialog 開關
     private CardInfo? _card;                         // 下方浮卡內容
     private double _selfLat, _selfLon;               // 自身座標（手機 GPS）
+    private double? _selfAlt, _selfCourse;           // 自身高度（公尺）與方位（度）
     private bool _hasSelf;                           // 是否取得自身定位
 
-    /// <summary>下方浮卡顯示內容</summary>
+    /// <summary>下方浮卡顯示內容（直排：狀態/名稱/座標/底列）</summary>
     private sealed class CardInfo
     {
-        public bool IsSelf;
-        public string Title = "";
-        public string Status = "";
-        public bool Ok;
-        public string Coords = "";
-        public string? Sub;
+        public string Status = "";       // 連線狀態（自己）或 RSSI（節點）
+        public bool StatusError;         // true → 紅字（未連線）
+        public string Name = "";         // 暱稱
+        public string Coords = "";       // 經緯度
+        public string BottomLeft = "";   // 高度（自己）或最後聽到（節點）
+        public string BottomRight = "";  // 方位（自己）
     }
 
     /// <summary>首次渲染後初始化地圖（容器需先存在）</summary>
@@ -130,37 +136,42 @@
         {
             var loc = await Geolocation.Default.GetLocationAsync(
                 new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(8)));
-            if (loc != null) { _selfLat = loc.Latitude; _selfLon = loc.Longitude; _hasSelf = true; }
+            if (loc != null)
+            {
+                _selfLat = loc.Latitude; _selfLon = loc.Longitude; _hasSelf = true;
+                _selfAlt = loc.Altitude;   // 高度（公尺，可能為 null）
+                _selfCourse = loc.Course;  // 方位（度，靜止時可能為 null）
+            }
         }
         catch { /* 無定位權限/逾時 → 不顯示自身點 */ }
     }
 
-    /// <summary>浮卡切換為「自己」</summary>
+    /// <summary>浮卡切換為「自己」（連線狀態 / 暱稱 / 座標 / 高度·方位）</summary>
     private void ShowSelfCard()
     {
         var id = Messaging.LocalDeviceId;
         _card = new CardInfo
         {
-            IsSelf = true,
-            Title = Messaging.LocalNickname,
-            Ok = id.HasValue,
-            Status = id.HasValue ? $"0x{id:X4}" : "NOT CONNECTED",
+            Status = id.HasValue ? $"0x{id:X4} 已連線" : "NOT CONNECTED",
+            StatusError = !id.HasValue,
+            Name = Messaging.LocalNickname,
             Coords = _hasSelf ? $"{_selfLat:F6}, {_selfLon:F6}" : "無 GPS 定位",
-            Sub = Messaging.FirmwareVersion is null ? null : $"韌體 {Messaging.FirmwareVersion}",
+            BottomLeft = _selfAlt.HasValue ? $"{_selfAlt.Value:F0} m" : "",
+            BottomRight = _selfCourse.HasValue ? $"{_selfCourse.Value:F0}°" : "",
         };
     }
 
-    /// <summary>浮卡切換為某節點</summary>
+    /// <summary>浮卡切換為某節點（RSSI / 名稱 / 座標 / 最後聽到）</summary>
     private void ShowNodeCard(NodeInfo n)
     {
         _card = new CardInfo
         {
-            IsSelf = false,
-            Title = string.IsNullOrEmpty(n.Name) ? $"0x{n.DeviceIdHex}" : $"{n.Name}（0x{n.DeviceIdHex}）",
-            Ok = true,
             Status = $"{n.Rssi} dBm",
+            StatusError = false,
+            Name = string.IsNullOrEmpty(n.Name) ? $"0x{n.DeviceIdHex}" : $"{n.Name}（0x{n.DeviceIdHex}）",
             Coords = n.HasPosition ? $"{n.Lat:F6}, {n.Lon:F6}" : "無座標",
-            Sub = NodesViewModel.AgeText(n),
+            BottomLeft = NodesViewModel.AgeText(n),
+            BottomRight = "",
         };
     }
 

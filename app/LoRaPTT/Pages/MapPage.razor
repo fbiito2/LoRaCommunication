@@ -16,7 +16,7 @@
     <!-- 右上按鈕區（F-037）-->
     <div class="map-tools">
         <button class="map-btn" @onclick="RecenterSelfAsync" title="回到自己">🧭</button>
-        <button class="map-btn" @onclick="ToggleList" title="節點清單">☰</button>
+        <button class="map-btn" @onclick="ToggleList" title="節點清單"><span class="oi oi-signal"></span></button>
     </div>
 
     <!-- 右下角資訊浮卡（半透明，直排）：進來顯示自己；點 marker 顯示該節點 -->
@@ -84,11 +84,11 @@
     .map-tools { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
     .map-btn { width: 44px; height: 44px; border: none; border-radius: 8px; background: rgba(20,20,25,0.85); color: #fff; font-size: 1.25rem; cursor: pointer; }
     .map-btn:active { background: rgba(60,60,70,0.9); }
-    .map-card { position: absolute; right: 12px; bottom: 24px; z-index: 10; background: rgba(15,18,22,0.82); color: #fff; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 8px 12px; min-width: 190px; max-width: 72%; backdrop-filter: blur(4px); }
-    .mc-status { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em; }
-    .mc-name { font-size: 1.05rem; font-weight: 700; line-height: 1.2; }
-    .mc-coords { font-size: 0.85rem; }
-    .mc-bottom { display: flex; justify-content: space-between; gap: 16px; font-size: 0.85rem; color: #ccd6dd; margin-top: 2px; }
+    .map-card { position: absolute; right: 12px; bottom: 24px; z-index: 10; background: rgba(15,18,22,0.72); color: #fff; border: 1px solid rgba(255,255,255,0.13); border-radius: 7px; padding: 5px 9px; min-width: 128px; max-width: 60%; backdrop-filter: blur(4px); }
+    .mc-status { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.03em; }
+    .mc-name { font-size: 0.82rem; font-weight: 700; line-height: 1.2; }
+    .mc-coords { font-size: 0.7rem; }
+    .mc-bottom { display: flex; justify-content: space-between; gap: 12px; font-size: 0.7rem; color: #ccd6dd; margin-top: 1px; }
     .map-dialog-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 20; display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; }
     .map-dialog { background: #1a1d22; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 14px; width: 90%; max-width: 420px; max-height: 70vh; overflow: auto; }
     .map-node-row { padding: 8px 6px; border-bottom: 1px solid #2a2d33; cursor: pointer; }

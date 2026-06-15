@@ -1,0 +1,75 @@
+@page "/nodes"
+@using LoRaPTT.ViewModels
+@using LoRaPTT.Models
+@inject NodesViewModel VM
+@implements IDisposable
+
+<div class="d-flex flex-column vh-100 bg-dark text-white">
+
+    <!-- 標題列 -->
+    <div class="p-2 border-bottom border-secondary d-flex align-items-center gap-2">
+        <h5 class="mb-0">節點清單</h5>
+        <span class="badge bg-secondary">@VM.Count 台</span>
+        <button class="btn btn-sm btn-outline-info ms-auto" @onclick="Ping">探測</button>
+    </div>
+
+    <!-- 節點清單（NodeDB，F-036）-->
+    <div class="flex-grow-1 overflow-auto p-2">
+        @if (VM.Count == 0)
+        {
+            <p class="text-muted text-center mt-4">
+                尚未聽到任何節點<br />
+                按「探測」廣播 PING，或等待鄰居傳訊／定位廣播
+            </p>
+        }
+        else
+        {
+            @foreach (var n in VM.Nodes)
+            {
+                <div class="card bg-dark border-secondary mb-2">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-bold">
+                                0x@n.DeviceIdHex
+                                @if (!string.IsNullOrEmpty(n.Name))
+                                {
+                                    <span class="text-info ms-1">@n.Name</span>
+                                }
+                            </span>
+                            <span class="small text-muted">@NodesViewModel.AgeText(n)</span>
+                        </div>
+                        <div class="small text-muted d-flex gap-3 mt-1">
+                            <span>RSSI: @n.Rssi dBm</span>
+                            @if (n.HasPosition)
+                            {
+                                <span class="text-success">
+                                    📍 @n.Lat.ToString("F5"), @n.Lon.ToString("F5")
+                                </span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>初始化：訂閱 ViewModel 變動事件</summary>
+    protected override void OnInitialized()
+    {
+        VM.StateChanged += OnVmChanged;
+    }
+
+    /// <summary>ViewModel 變動 → 在 UI 執行緒重繪</summary>
+    private async void OnVmChanged() => await InvokeAsync(StateHasChanged);
+
+    /// <summary>送出廣播 PING 探測</summary>
+    private async Task Ping() => await VM.PingCommand.ExecuteAsync(null);
+
+    /// <summary>釋放：取消訂閱避免記憶體洩漏</summary>
+    public void Dispose()
+    {
+        VM.StateChanged -= OnVmChanged;
+    }
+}

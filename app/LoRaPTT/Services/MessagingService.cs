@@ -38,6 +38,12 @@ public sealed class MessagingService : IMessagingService
     /// <summary>收到 SOS 緊急求救（F-073）。參數：發送者 ID、GPS payload（可能為空）</summary>
     public event Action<ushort, byte[]>? SosReceived;
 
+    /// <summary>收到任何節點的封包（供 NodeDB 累積，F-036）。參數：(來源 ID, RSSI)</summary>
+    public event Action<ushort, short>? NodeHeard;
+
+    /// <summary>收到定位廣播（F-074）。參數：(來源 ID, 緯度, 經度)</summary>
+    public event Action<ushort, double, double>? PositionReceived;
+
     public MessagingService(ICommService comm, ILogger<MessagingService> logger, INotifier notifier)
     {
         _comm = comm;
@@ -160,12 +166,16 @@ public sealed class MessagingService : IMessagingService
         // 去重：洪泛網路同封包可能多路抵達
         if (_dedup.SeenOrAdd(pkt.SrcId, pkt.Seq)) return;
 
+        // NodeDB（F-036）：收到任何封包都更新該節點的最後聽到時間與 RSSI
+        NodeHeard?.Invoke(pkt.SrcId, rssi);
+
         switch (pkt.Type)
         {
             case PacketType.Text: HandleText(pkt, rssi); break;
             case PacketType.Ack: HandleAck(pkt); break;
             case PacketType.Ping: HandlePing(pkt); break;
             case PacketType.Sos: HandleSos(pkt); break;
+            case PacketType.Pos: HandlePos(pkt); break;
             case PacketType.Voice:   // 語音另由 PTT 路徑處理
             case PacketType.Control:
             default:
@@ -293,6 +303,29 @@ public sealed class MessagingService : IMessagingService
         _logger.LogWarning("!!! 收到 SOS 緊急求救！來自 0x{Src:X4}", pkt.SrcId);
         _notifier.NotifyMessage($"0x{pkt.SrcId:X4}", "緊急求救！", sos: true);
         SosReceived?.Invoke(pkt.SrcId, pkt.Payload);
+
+        // SOS 帶 GPS 時，也更新 NodeDB 座標（payload：[id 2][lat 8][lon 8]）
+        if (pkt.Payload.Length >= 18)
+            PositionReceived?.Invoke(pkt.SrcId,
+                BitConverter.ToDouble(pkt.Payload, 2), BitConverter.ToDouble(pkt.Payload, 10));
+    }
+
+    /// <summary>
+    /// 處理定位廣播封包（F-074，TYPE=0x07）。
+    /// Payload：[DeviceID 2B][Lat 8B double][Lon 8B double]（小端，對齊韌體）。
+    /// </summary>
+    /// <param name="pkt">已解析的 LoRa 封包</param>
+    private void HandlePos(LoRaPacket pkt)
+    {
+        if (pkt.Payload.Length < 18)
+        {
+            _logger.LogWarning("定位封包 payload 過短（{Len} bytes），忽略", pkt.Payload.Length);
+            return;
+        }
+        double lat = BitConverter.ToDouble(pkt.Payload, 2);
+        double lon = BitConverter.ToDouble(pkt.Payload, 10);
+        _logger.LogDebug("收到定位 0x{Src:X4} @ {Lat:F6},{Lon:F6}", pkt.SrcId, lat, lon);
+        PositionReceived?.Invoke(pkt.SrcId, lat, lon);
     }
 
     /// <summary>

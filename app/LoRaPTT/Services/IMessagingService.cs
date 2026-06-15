@@ -34,6 +34,12 @@ public interface IMessagingService
     /// <summary>收到 SOS 緊急求救（F-073）。參數：發送者 ID、GPS + 附加 payload</summary>
     event Action<ushort, byte[]> SosReceived;
 
+    /// <summary>收到任何節點的封包（供 NodeDB 累積，F-036）。參數：(來源 ID, RSSI)</summary>
+    event Action<ushort, short> NodeHeard;
+
+    /// <summary>收到定位廣播（F-074）。參數：(來源 ID, 緯度, 經度)</summary>
+    event Action<ushort, double, double> PositionReceived;
+
     /// <summary>
     /// 送出文字訊息。
     /// 點對點（unicast）狀態為 Sending（待 ACK）；廣播/群組為 Sent（無 ACK）。

@@ -15,4 +15,6 @@ public enum PacketType : byte
     Ping = 0x05,
     /// <summary>SOS 緊急求救（F-070）</summary>
     Sos = 0x06,
+    /// <summary>定位廣播（F-074，GPS 座標）</summary>
+    Pos = 0x07,
 }

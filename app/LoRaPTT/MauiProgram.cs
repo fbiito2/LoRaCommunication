@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using LoRaPTT.Services;
 using LoRaPTT.ViewModels;
@@ -41,6 +42,9 @@ public static class MauiProgram
         // ── 文字訊息服務（封包組裝/解析、ACK、PING 探測）──────
         builder.Services.AddSingleton<IMessagingService, MessagingService>();
 
+        // ── 節點資料庫（NodeDB，F-036）：從收到的封包自動建檔 ────
+        builder.Services.AddSingleton<NodeRegistry>();
+
         // ── 通訊錄/群組持久化（F-003 / F-020~022）────────────
         builder.Services.AddSingleton<RosterStore>();
 
@@ -63,7 +67,12 @@ public static class MauiProgram
         builder.Services.AddSingleton<ViewModels.ChatViewModel>();
         builder.Services.AddSingleton<ViewModels.SettingsViewModel>();
         builder.Services.AddSingleton<ViewModels.SosViewModel>();
+        builder.Services.AddSingleton<ViewModels.NodesViewModel>();
 
-        return builder.Build();
+        var app = builder.Build();
+        // 強制建立 NodeRegistry，使其從啟動就訂閱封包事件、持續累積節點（F-036）；
+        // 否則它只在進入節點頁時才被建立，會漏掉之前收到的封包。
+        app.Services.GetRequiredService<NodeRegistry>();
+        return app;
     }
 }

@@ -3,7 +3,7 @@
 
 /// @brief OLED 顯示模組（SSD1306 64×48）
 namespace Display {
-    enum class Page { STATUS = 0, NETWORK, LORA, RELAY, GPS, PAGE_COUNT };
+    enum class Page { STATUS = 0, NETWORK, LORA, RELAY, GPS, NODES, PAGE_COUNT };
 
     void init();
     void nextPage();     // 短按按鈕切換

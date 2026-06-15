@@ -17,12 +17,13 @@
 #include "ota_service.h"
 #include "debug_log.h"
 #include "gps.h"
+#include "nodedb.h"
 
 // USB CDC 作為資料通道時抑制除錯 log（見 debug_log.h）
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.7.4"
+#define FW_VERSION "0.7.5"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -171,6 +172,19 @@ static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
     Display::lastRssi = rssi;
     Display::rxCount++;
     Ota::setRxStats(Display::rxCount, rssi, pkt.srcId); // 供 /version 觀察雙機收訊
+
+    // NodeDB（F-036）：從收到的封包自動建檔（ID/RSSI/最後聽到），並從特定類型學暱稱/座標
+    NodeDb::heard(pkt.srcId, rssi);
+    if (pkt.type == PKT_TYPE_PING && pkt.payloadLen > 2) {
+        char nm[16] = {0};
+        size_t nl = pkt.payloadLen - 2; if (nl > 15) nl = 15;
+        memcpy(nm, pkt.payload + 2, nl);
+        NodeDb::setName(pkt.srcId, nm); // PING（含回覆）payload [id 2][name]
+    } else if ((pkt.type == PKT_TYPE_POS || pkt.type == PKT_TYPE_SOS) && pkt.payloadLen >= 18) {
+        double la, lo;
+        memcpy(&la, pkt.payload + 2, 8); memcpy(&lo, pkt.payload + 10, 8);
+        NodeDb::setPos(pkt.srcId, la, lo); // POS/SOS payload [id 2][lat 8][lon 8]
+    }
 
     // F-073：收到 SOS → 全節點警報（不管有沒有接手機）
     if (pkt.type == PKT_TYPE_SOS) {

@@ -1,4 +1,5 @@
 #include "display.h"
+#include "nodedb.h"
 
 namespace Display {
 
@@ -115,6 +116,18 @@ void loop() {
             M5.Display.println("searching");
         }
         break;
+
+    case Page::NODES: {
+        // 節點清單：總數 + 最近聽到的前 4 台（ID + 多久前聽到）
+        NodeDb::Node ns[4];
+        int n = NodeDb::snapshot(ns, 4);
+        M5.Display.printf("Nodes:%d\n", NodeDb::count());
+        for (int i = 0; i < n; i++) {
+            uint32_t age = (now - ns[i].lastMs) / 1000;
+            M5.Display.printf("%04X %lus\n", ns[i].id, (unsigned long)age);
+        }
+        break;
+    }
 
     default: break;
     }

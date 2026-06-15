@@ -82,6 +82,13 @@
         @(VM.IsBusy ? "推送中..." : "套用到 C6L")
     </button>
 
+    <hr class="border-secondary" />
+    <h6 class="text-info">離線地圖</h6>
+    <div class="mb-3 d-flex align-items-center gap-2">
+        <span class="small text-muted">已下載衛星圖：<span class="text-white">@VM.OfflineMapInfo</span></span>
+        <button class="btn btn-sm btn-outline-danger ms-auto" @onclick="ClearOffline">清除</button>
+    </div>
+
     <p class="text-muted small mt-auto">
         裝置 ID 為出廠燒錄，無法在此修改。如需重置所有設定，請在 C6L 長按按鈕 6 秒。
     </p>
@@ -101,6 +108,7 @@
     private async Task Connect() => await VM.ConnectCommand.ExecuteAsync(null);
     private void SaveNickname() => VM.SaveNicknameCommand.Execute(null);
     private async Task Apply() => await VM.ApplyToDeviceCommand.ExecuteAsync(null);
+    private void ClearOffline() => VM.ClearOfflineMapsCommand.Execute(null);
 
     public void Dispose()
     {

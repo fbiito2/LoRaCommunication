@@ -33,6 +33,9 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _loraFreqMhz = "920.0";
     [ObservableProperty] private string _posIntervalSec = "30";
 
+    // ── 離線地圖（F-037 階段二）────────────────────────────────
+    [ObservableProperty] private string _offlineMapInfo = "計算中...";
+
     /// <summary>供 Blazor 頁面在資料變動時呼叫 StateHasChanged</summary>
     public event Action? StateChanged;
 
@@ -53,6 +56,26 @@ public partial class SettingsViewModel : ObservableObject
         // 若已連線，同步初始狀態
         IsConnected = _comm.IsConnected;
         SyncDeviceInfo();
+        RefreshOfflineInfo();
+    }
+
+    /// <summary>更新離線地圖容量顯示（張數 + MB）</summary>
+    private void RefreshOfflineInfo()
+    {
+        var (bytes, count) = OfflineTiles.GetUsage();
+        OfflineMapInfo = count == 0
+            ? "尚未下載"
+            : $"{count} 張，約 {bytes / 1024.0 / 1024.0:F1} MB";
+    }
+
+    /// <summary>清除所有離線地圖圖磚</summary>
+    [RelayCommand]
+    private void ClearOfflineMaps()
+    {
+        OfflineTiles.Clear();
+        RefreshOfflineInfo();
+        StatusMessage = "離線圖磚已清除";
+        Notify();
     }
 
     // ── 連線 ────────────────────────────────────────────────

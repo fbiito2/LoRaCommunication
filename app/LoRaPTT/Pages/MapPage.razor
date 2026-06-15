@@ -288,11 +288,7 @@
         }
     }
 
-    // ── 離線圖磚（衛星 NLSC PHOTO2，F-037 階段二）────────────────
-    // 存於 AppData/offlinetiles/sat/{z}/{x}/{y}.jpg；下載與線上瀏覽都寫入同一庫，覆蓋自然累積。
-    private static string TilePath(int z, int x, int y)
-        => Path.Combine(FileSystem.AppDataDirectory, "offlinetiles", "sat",
-                        z.ToString(), x.ToString(), y + ".jpg");
+    // ── 離線圖磚（衛星 NLSC PHOTO2，F-037 階段二，存取見 Services/OfflineTiles）──
 
     /// <summary>
     /// 供地圖本機協定取衛星圖磚：本機有→回本機(離線可用)；無且有網路→抓 NLSC 並快取；都無→null(空白)。
@@ -304,7 +300,7 @@
     [JSInvokable]
     public async Task<string?> GetOfflineTile(int z, int x, int y)
     {
-        var path = TilePath(z, x, y);
+        var path = OfflineTiles.TilePath("sat", z, x, y);
         try
         {
             if (File.Exists(path))
@@ -406,7 +402,7 @@
         {
             var url = $"https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}";
             var bytes = await _http.GetByteArrayAsync(url, ct);
-            var path = TilePath(z, x, y);
+            var path = OfflineTiles.TilePath("sat", z, x, y);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             await File.WriteAllBytesAsync(path, bytes, ct);
         }

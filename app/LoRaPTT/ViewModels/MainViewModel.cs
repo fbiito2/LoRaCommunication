@@ -5,52 +5,59 @@ using Microsoft.Extensions.Logging;
 
 namespace LoRaPTT.ViewModels;
 
+/// <summary>
+/// PTT 語音 ViewModel（F-052）。按住說話：錄音 → Codec2 encode → 廣播 TYPE_VOICE；
+/// 同時通知 C6L 全網切 SF7/BW500 高速模式。放開或滿 30 秒自動結束、切回長距。
+/// 收訊：訂閱 MessagingService 的語音幀 → Codec2 decode → 播放（半雙工：自己說話時不播）。
+/// </summary>
 public partial class MainViewModel : ObservableObject
 {
-    private readonly ICommService         _comm;
-    private readonly IAudioRecordService  _record;
-    private readonly IAudioPlayService    _play;
+    private const int MaxPttSeconds = 30; // 單次 PTT 上限（duty-cycle 合規 + 半雙工公平）
+
+    private readonly ICommService        _comm;
+    private readonly IMessagingService   _messaging;
+    private readonly IAudioRecordService _record;
+    private readonly IAudioPlayService   _play;
     private readonly Codec2Service        _codec2;
     private readonly ILogger<MainViewModel> _logger;
 
     private CancellationTokenSource? _pttCts;
+    private System.Threading.Timer?  _limitTimer; // 30 秒上限計時
+    private bool _playReady;                       // AudioTrack 是否已初始化
 
-    // ── UI 綁定屬性 ────────────────────────────────────────
     [ObservableProperty] private bool   _isConnected;
     [ObservableProperty] private bool   _isPttActive;
     [ObservableProperty] private string _statusMessage = "未連線";
     [ObservableProperty] private string _modeLabel     = "";
 
-    // 接收 Codec2 bytes buffer（累積 6 bytes 解碼一幀）
-    private readonly List<byte> _rxBuffer = new();
-
     public MainViewModel(
         ICommService comm,
+        IMessagingService messaging,
         IAudioRecordService record,
         IAudioPlayService play,
         Codec2Service codec2,
         ILogger<MainViewModel> logger)
     {
-        _comm   = comm;
-        _record = record;
-        _play   = play;
-        _codec2 = codec2;
-        _logger = logger;
+        _comm      = comm;
+        _messaging = messaging;
+        _record    = record;
+        _play      = play;
+        _codec2    = codec2;
+        _logger    = logger;
 
-        _comm.OnDataReceived      += OnCommDataReceived;
+        try { _codec2.Init(); } catch (Exception ex) { _logger.LogError(ex, "Codec2 初始化失敗（native lib 未載入）"); }
+
+        _messaging.VoiceReceived  += OnVoiceReceived;
         _comm.OnConnectionChanged += OnConnectionChanged;
     }
 
-    // ── 連線（自動根據目前模式：WiFi 或 USB）────────────────
+    // ── 連線 ───────────────────────────────────────────────
     [RelayCommand]
     private async Task ConnectAsync()
     {
         StatusMessage = "連線中...";
         ModeLabel     = _comm.Mode == CommMode.WiFi ? "WiFi 模式" : "USB 模式";
-        try
-        {
-            await _comm.ConnectAsync();
-        }
+        try { await _comm.ConnectAsync(); }
         catch (Exception ex)
         {
             _logger.LogError(ex, "連線失敗");
@@ -58,64 +65,81 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    // ── PTT 按下（開始錄音 → Codec2 encode → 傳送）──────────
+    // ── PTT 按下 ───────────────────────────────────────────
     [RelayCommand]
     private async Task PttPressAsync()
     {
         if (!IsConnected || IsPttActive) return;
+        if (!_codec2.IsAvailable) { StatusMessage = "語音不可用（Codec2 未載入）"; return; }
+
         IsPttActive   = true;
         StatusMessage = "傳送中...";
-
         _pttCts = new CancellationTokenSource();
-        var packet = new List<byte>();
 
-        await _record.StartAsync(async pcmFrame =>
+        // 先讓全網切到語音模式（SF7/BW500），稍候再開始串流，給各節點切換時間
+        try { await _messaging.SendVoiceModeAsync(true, _pttCts.Token); } catch (Exception ex) { _logger.LogError(ex, "送 voice_start 失敗"); }
+        try { await Task.Delay(250, _pttCts.Token); } catch (OperationCanceledException) { return; }
+
+        // 30 秒上限：到點自動放開
+        _limitTimer = new System.Threading.Timer(
+            _ => { StatusMessage = $"已達 {MaxPttSeconds} 秒上限"; _ = PttReleaseAsync(); },
+            null, MaxPttSeconds * 1000, Timeout.Infinite);
+
+        var packet = new List<byte>(Codec2Service.BytesPerFrame * Codec2Service.FramesPerPacket);
+        try
         {
-            var encoded = _codec2.Encode(pcmFrame);
-            packet.AddRange(encoded);
-
-            // 累積 10 幀（200ms）送一包
-            if (packet.Count >= Codec2Service.BytesPerFrame * Codec2Service.FramesPerPacket)
+            await _record.StartAsync(async pcmFrame =>
             {
-                try { await _comm.SendAsync(packet.ToArray()); }
-                catch (Exception ex) { _logger.LogError(ex, "傳送語音封包失敗"); }
-                packet.Clear();
-            }
-        }, _pttCts.Token);
+                byte[] encoded;
+                try { encoded = _codec2.Encode(pcmFrame); }
+                catch (Exception ex) { _logger.LogError(ex, "Codec2 encode 失敗"); return; }
+                packet.AddRange(encoded);
+
+                // 累積 10 幀（200ms）送一包廣播
+                if (packet.Count >= Codec2Service.BytesPerFrame * Codec2Service.FramesPerPacket)
+                {
+                    var frames = packet.ToArray();
+                    packet.Clear();
+                    try { await _messaging.SendVoiceAsync(frames, _pttCts.Token); }
+                    catch (Exception ex) { _logger.LogError(ex, "送語音封包失敗"); }
+                }
+            }, _pttCts.Token);
+        }
+        catch (Exception ex) { _logger.LogError(ex, "啟動錄音失敗"); await PttReleaseAsync(); }
     }
 
-    // ── PTT 放開（停止錄音）───────────────────────────────
+    // ── PTT 放開 ───────────────────────────────────────────
     [RelayCommand]
     private async Task PttReleaseAsync()
     {
         if (!IsPttActive) return;
+        IsPttActive = false;
+        _limitTimer?.Dispose(); _limitTimer = null;
         _pttCts?.Cancel();
-        await _record.StopAsync();
-        IsPttActive   = false;
-        StatusMessage = "已連線";
+
+        try { await _record.StopAsync(); } catch (Exception ex) { _logger.LogError(ex, "停止錄音失敗"); }
+        // 通知全網切回長距模式
+        try { await _messaging.SendVoiceModeAsync(false); } catch (Exception ex) { _logger.LogError(ex, "送 voice_end 失敗"); }
+
+        if (StatusMessage.StartsWith("傳送中")) StatusMessage = IsConnected ? "已連線" : "未連線";
     }
 
-    // ── 接收資料 → Codec2 解碼 → 播放 ────────────────────
-    private void OnCommDataReceived(byte[] data)
+    // ── 收到語音幀 → 解碼 → 播放（半雙工：自己說話時不播）──────
+    private async void OnVoiceReceived(byte[] codec2Frames)
     {
-        // 僅在通話中才嘗試解碼語音；其餘（文字/握手線路幀）交給 MessagingService 處理。
-        // 並以 try/catch 保護：Codec2 native library 未編譯時不可讓整個 App 崩潰。
-        if (!IsPttActive) return;
+        if (IsPttActive) return; // 自己正在講 → 不播（也避免回授）
         try
         {
-            _rxBuffer.AddRange(data);
-            while (_rxBuffer.Count >= Codec2Service.BytesPerFrame)
+            if (!_playReady) { await _play.InitAsync(); _playReady = true; }
+            for (int i = 0; i + Codec2Service.BytesPerFrame <= codec2Frames.Length; i += Codec2Service.BytesPerFrame)
             {
-                var frame = _rxBuffer.GetRange(0, Codec2Service.BytesPerFrame).ToArray();
-                _rxBuffer.RemoveRange(0, Codec2Service.BytesPerFrame);
+                var frame = new byte[Codec2Service.BytesPerFrame];
+                Array.Copy(codec2Frames, i, frame, 0, Codec2Service.BytesPerFrame);
                 var pcm = _codec2.Decode(frame);
-                _ = _play.PlayPcmAsync(pcm);
+                await _play.PlayPcmAsync(pcm);
             }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "語音解碼失敗（Codec2 native library 可能未編譯）");
-        }
+        catch (Exception ex) { _logger.LogError(ex, "語音解碼/播放失敗"); }
     }
 
     private void OnConnectionChanged(bool connected)

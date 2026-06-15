@@ -50,11 +50,15 @@ public class MainActivity : MauiAppCompatActivity
                 }
             }
 
+            // 執行期權限：通知（Android 13+）+ 麥克風（PTT 語音 F-052）
+            var need = new List<string>();
             if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu
                 && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted)
-            {
-                RequestPermissions(new[] { "android.permission.POST_NOTIFICATIONS" }, 100);
-            }
+                need.Add("android.permission.POST_NOTIFICATIONS");
+            if (CheckSelfPermission("android.permission.RECORD_AUDIO") != Permission.Granted)
+                need.Add("android.permission.RECORD_AUDIO");
+            if (need.Count > 0)
+                RequestPermissions(need.ToArray(), 100);
         }
         catch (System.Exception ex)
         {

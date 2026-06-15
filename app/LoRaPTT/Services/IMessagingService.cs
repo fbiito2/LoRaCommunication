@@ -40,6 +40,9 @@ public interface IMessagingService
     /// <summary>收到定位廣播（F-074）。參數：(來源 ID, 緯度, 經度)</summary>
     event Action<ushort, double, double> PositionReceived;
 
+    /// <summary>收到語音幀（F-052 PTT）。參數為 Codec2 位元組（多幀串接，每幀 6 bytes）。</summary>
+    event Action<byte[]> VoiceReceived;
+
     /// <summary>
     /// 送出文字訊息。
     /// 點對點（unicast）狀態為 Sending（待 ACK）；廣播/群組為 Sent（無 ACK）。
@@ -52,4 +55,10 @@ public interface IMessagingService
     /// <summary>發送 SOS 緊急求救（F-072），重複 3 次，HOP=15</summary>
     Task SendSosAsync(double gpsLat = 0, double gpsLon = 0,
         string? extraText = null, CancellationToken ct = default);
+
+    /// <summary>送出語音幀（F-052）。廣播 TYPE_VOICE，無 ACK、不重送（串流容忍丟包）。</summary>
+    Task SendVoiceAsync(byte[] codec2Frames, CancellationToken ct = default);
+
+    /// <summary>通知 C6L 進入/結束語音模式（F-052），觸發全網 LoRa SF7/BW500 切換。</summary>
+    Task SendVoiceModeAsync(bool start, CancellationToken ct = default);
 }

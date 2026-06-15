@@ -37,6 +37,8 @@ public sealed class MessagingService : IMessagingService
     public event Action<Contact>? DeviceDiscovered;
     /// <summary>收到 SOS 緊急求救（F-073）。參數：發送者 ID、GPS payload（可能為空）</summary>
     public event Action<ushort, byte[]>? SosReceived;
+    /// <summary>收到語音幀（F-052）。參數為 Codec2 位元組。</summary>
+    public event Action<byte[]>? VoiceReceived;
 
     /// <summary>收到任何節點的封包（供 NodeDB 累積，F-036）。參數：(來源 ID, RSSI)</summary>
     public event Action<ushort, short>? NodeHeard;
@@ -176,7 +178,7 @@ public sealed class MessagingService : IMessagingService
             case PacketType.Ping: HandlePing(pkt); break;
             case PacketType.Sos: HandleSos(pkt); break;
             case PacketType.Pos: HandlePos(pkt); break;
-            case PacketType.Voice:   // 語音另由 PTT 路徑處理
+            case PacketType.Voice: VoiceReceived?.Invoke(pkt.Payload); break; // F-052 PTT 語音幀
             case PacketType.Control:
             default:
                 _logger.LogDebug("忽略 TYPE=0x{Type:X2} 封包", (byte)pkt.Type);
@@ -371,5 +373,26 @@ public sealed class MessagingService : IMessagingService
             }
             if (i < 2) await Task.Delay(2000, ct); // 間隔 2 秒
         }
+    }
+
+    // ── 語音 PTT（F-052）────────────────────────────────────
+    public async Task SendVoiceAsync(byte[] codec2Frames, CancellationToken ct = default)
+    {
+        // 廣播語音幀；不重送（語音串流容忍丟包，重送只會塞爆半雙工頻道）。
+        var pkt = new LoRaPacket
+        {
+            DstId = DstId.Broadcast,
+            Seq = NextSeq(),
+            Type = PacketType.Voice,
+            Payload = codec2Frames,
+        };
+        await _comm.SendAsync(LinkFrame.WrapData(PacketCodec.Serialize(pkt)), ct);
+    }
+
+    public async Task SendVoiceModeAsync(bool start, CancellationToken ct = default)
+    {
+        // 觸發 C6L 全網 LoRa 模式切換（SF7/BW500 ↔ SF9/BW125）
+        var json = JsonSerializer.Serialize(new { cmd = start ? "voice_start" : "voice_end" });
+        await _comm.SendAsync(LinkFrame.WrapCtrl(json), ct);
     }
 }

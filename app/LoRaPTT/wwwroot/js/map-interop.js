@@ -8,7 +8,19 @@
 
     // 底圖樣式：街道(OpenFreeMap 向量) / 衛星(NLSC 正射影像 PHOTO2 raster)
     const STYLES = {
-        street: 'https://tiles.openfreemap.org/styles/liberty',
+        // 街道改用 NLSC 通用電子地圖(EMAP)，走本機協定 → 與衛星一致、可離線
+        street: {
+            version: 8,
+            sources: {
+                emap: {
+                    type: 'raster',
+                    tiles: ['loraoff://emap/{z}/{x}/{y}'],
+                    tileSize: 256,
+                    attribution: '© 內政部國土測繪中心'
+                }
+            },
+            layers: [{ id: 'emap', type: 'raster', source: 'emap' }]
+        },
         sat: {
             version: 8,
             sources: {
@@ -61,10 +73,10 @@
     function registerOfflineProtocol() {
         if (protoRegistered || typeof maplibregl === 'undefined') return;
         maplibregl.addProtocol('loraoff', async function (params) {
-            const m = /loraoff:\/\/sat\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
+            const m = /loraoff:\/\/(sat|emap)\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
             if (!m || !dotNetRef) throw new Error('bad tile url');
             const b64 = await dotNetRef.invokeMethodAsync('GetOfflineTile',
-                parseInt(m[1]), parseInt(m[2]), parseInt(m[3]));
+                m[1], parseInt(m[2]), parseInt(m[3]), parseInt(m[4]));
             if (!b64) throw new Error('tile missing'); // 沒下載且離線 → 視為缺圖（空白）
             return { data: b64ToArr(b64).buffer };
         });

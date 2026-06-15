@@ -52,7 +52,7 @@
         <div class="map-dl">
             <div class="map-dl-bar"><div class="map-dl-fill" style="width:@(DlPercent)%"></div></div>
             <div class="map-dl-text">
-                <span>下載衛星圖 @_dlDone / @_dlTotal（約 @DlMb MB）</span>
+                <span>下載離線圖磚 @_dlDone / @_dlTotal（約 @DlMb MB）</span>
                 <button class="map-dl-cancel" @onclick="CancelDownload">✕</button>
             </div>
         </div>
@@ -130,7 +130,7 @@
     private CancellationTokenSource? _dlCts;          // 下載取消權杖
 
     private int DlPercent => _dlTotal > 0 ? _dlDone * 100 / _dlTotal : 0;
-    private int DlMb => (int)Math.Round(_dlTotal * 25.0 / 1024.0); // 估約 25KB/張
+    private int DlMb => (int)Math.Round(_dlTotal * 20.0 / 1024.0); // 估約 20KB/張(衛星+街道平均)
     private CardInfo? _card;                         // 下方浮卡內容
     private double _selfLat, _selfLon;               // 自身座標（手機 GPS）
     private double? _selfAlt, _selfCourse;           // 自身高度（公尺）與方位（度）
@@ -290,25 +290,31 @@
 
     // ── 離線圖磚（衛星 NLSC PHOTO2，F-037 階段二，存取見 Services/OfflineTiles）──
 
+    /// <summary>NLSC WMTS 圖磚 URL（layer: sat→PHOTO2 衛星 / emap→EMAP 街道；WMTS 順序 {z}/{y}/{x}）</summary>
+    private static string NlscUrl(string layer, int z, int x, int y)
+    {
+        var nlsc = layer == "emap" ? "EMAP" : "PHOTO2";
+        return $"https://wmts.nlsc.gov.tw/wmts/{nlsc}/default/GoogleMapsCompatible/{z}/{y}/{x}";
+    }
+
     /// <summary>
-    /// 供地圖本機協定取衛星圖磚：本機有→回本機(離線可用)；無且有網路→抓 NLSC 並快取；都無→null(空白)。
+    /// 供地圖本機協定取圖磚：本機有→回本機(離線可用)；無且有網路→抓 NLSC 並快取；都無→null(空白)。
     /// </summary>
+    /// <param name="layer">圖層（sat 衛星 / emap 街道）</param>
     /// <param name="z">縮放層級</param>
     /// <param name="x">圖磚 X</param>
     /// <param name="y">圖磚 Y</param>
     /// <returns>JPEG 圖磚的 base64；取不到回 null</returns>
     [JSInvokable]
-    public async Task<string?> GetOfflineTile(int z, int x, int y)
+    public async Task<string?> GetOfflineTile(string layer, int z, int x, int y)
     {
-        var path = OfflineTiles.TilePath("sat", z, x, y);
+        var path = OfflineTiles.TilePath(layer, z, x, y);
         try
         {
             if (File.Exists(path))
                 return Convert.ToBase64String(await File.ReadAllBytesAsync(path));
 
-            // 線上補抓 NLSC（WMTS 順序為 {z}/{y}/{x}）並快取到本機
-            var url = $"https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}";
-            var bytes = await _http.GetByteArrayAsync(url);
+            var bytes = await _http.GetByteArrayAsync(NlscUrl(layer, z, x, y));
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             await File.WriteAllBytesAsync(path, bytes);
             return Convert.ToBase64String(bytes);
@@ -340,7 +346,7 @@
         var tiles = EnumerateTiles(view, zMin, 16);
         if (tiles.Count == 0) return;
 
-        _dlTotal = tiles.Count; _dlDone = 0;
+        _dlTotal = tiles.Count * 2; _dlDone = 0; // 衛星 + 街道兩層
         _downloading = true;
         _dlCts = new CancellationTokenSource();
         await InvokeAsync(StateHasChanged);
@@ -349,7 +355,9 @@
             foreach (var (z, x, y) in tiles)
             {
                 if (_dlCts.IsCancellationRequested) break;
-                await FetchAndSaveTileAsync(z, x, y, _dlCts.Token);
+                await FetchAndSaveTileAsync("sat", z, x, y, _dlCts.Token);
+                _dlDone++;
+                await FetchAndSaveTileAsync("emap", z, x, y, _dlCts.Token);
                 _dlDone++;
                 if (_dlDone % 8 == 0) await InvokeAsync(StateHasChanged); // 每 8 張刷新進度
             }
@@ -395,14 +403,13 @@
         return (int)Math.Floor((1 - Math.Log(Math.Tan(r) + 1 / Math.Cos(r)) / Math.PI) / 2 * (1 << z));
     }
 
-    /// <summary>抓單張 NLSC 衛星圖磚並存到本機（覆蓋＝更新）</summary>
-    private async Task FetchAndSaveTileAsync(int z, int x, int y, CancellationToken ct)
+    /// <summary>抓單張 NLSC 圖磚並存到本機（覆蓋＝更新）</summary>
+    private async Task FetchAndSaveTileAsync(string layer, int z, int x, int y, CancellationToken ct)
     {
         try
         {
-            var url = $"https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}";
-            var bytes = await _http.GetByteArrayAsync(url, ct);
-            var path = OfflineTiles.TilePath("sat", z, x, y);
+            var bytes = await _http.GetByteArrayAsync(NlscUrl(layer, z, x, y), ct);
+            var path = OfflineTiles.TilePath(layer, z, x, y);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             await File.WriteAllBytesAsync(path, bytes, ct);
         }

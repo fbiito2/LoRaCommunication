@@ -23,6 +23,10 @@
         <button class="map-btn" @onclick="ToggleBaseAsync" title="@(_satellite ? "切換街道圖" : "切換衛星圖")"><span class="oi oi-layers"></span></button>
         <button class="map-btn @(_radar ? "active" : "")" @onclick="ToggleRadarAsync" title="氣象雷達"><span class="oi oi-rain"></span></button>
         <button class="map-btn" @onclick="DownloadCurrentViewAsync" disabled="@_downloading" title="下載此區衛星圖(離線用)"><span class="oi oi-cloud-download"></span></button>
+        <button class="map-btn @(_forceOffline ? "active" : "")" @onclick="ToggleForceOffline"
+                title="@(_forceOffline ? "強制離線中：只用已下載圖磚,不耗行動數據(點:允許上線)" : "允許上線取圖(點:強制離線、省行動數據)")">
+            <span class="oi @(_forceOffline ? "oi-ban" : "oi-globe")"></span>
+        </button>
     </div>
 
     <!-- 右下角資訊浮卡（半透明，直排）：進來顯示自己；點 marker 顯示該節點 -->
@@ -126,6 +130,7 @@
     private bool _satellite;                         // 底圖是否為衛星(NLSC)
     private bool _radar;                             // CWA 雷達疊加是否開啟
     private bool _downloading;                        // 是否正在下載離線圖磚
+    private bool _forceOffline;                        // 強制離線：只用本機圖磚、不抓網路（省行動數據）
     private int _dlDone, _dlTotal;                    // 下載進度（已完成/總數）
     private CancellationTokenSource? _dlCts;          // 下載取消權杖
 
@@ -151,6 +156,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        _forceOffline = Preferences.Get("map_force_offline", false); // 還原上次的強制離線設定
         _ref = DotNetObjectReference.Create(this);
         await TryGetSelfLocationAsync();
         await JS.InvokeVoidAsync("loraMap.init", _ref,
@@ -253,6 +259,13 @@
     /// <summary>開/關節點清單 dialog</summary>
     private void ToggleList() => _showList = !_showList;
 
+    /// <summary>切換「強制離線」：開啟後地圖只用已下載的本機圖磚、不抓網路，省行動數據。設定持久化。</summary>
+    private void ToggleForceOffline()
+    {
+        _forceOffline = !_forceOffline;
+        Preferences.Set("map_force_offline", _forceOffline);
+    }
+
     /// <summary>切換底圖：街道 ↔ 衛星(NLSC 正射影像)</summary>
     private async Task ToggleBaseAsync()
     {
@@ -313,6 +326,8 @@
         {
             if (File.Exists(path))
                 return Convert.ToBase64String(await File.ReadAllBytesAsync(path));
+
+            if (_forceOffline) return null; // 強制離線：本機沒有就空白，絕不抓網路（省行動數據）
 
             var bytes = await _http.GetByteArrayAsync(NlscUrl(layer, z, x, y));
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);

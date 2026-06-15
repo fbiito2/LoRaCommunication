@@ -25,9 +25,20 @@
 - **UI**：右上鈕 = 回到自己(oi-map-marker)/節點清單(oi-people)/底圖切換(oi-layers)/雷達(oi-rain)/下載(oi-cloud-download)；右下半透明資訊浮卡（自己或點選節點）
 
 ## 三、待做（回家接續）
-- **地圖 v2 剩**：③ 線上↔離線**手動切換鈕**（強制離線、省行動數據）、④ MBTiles 化（低優先，目前檔案方式夠用）
+- **地圖 v2 剩**：~~③ 線上↔離線手動切換鈕~~ ✅ **已做（2026-06-15）** — `MapPage` 加「強制離線」鈕
+  (oi-globe↔oi-ban)，開啟時 `GetOfflineTile` 只回本機圖磚、不抓網路；以 `Preferences` 持久化。
+  剩 ④ MBTiles 化（低優先，目前檔案方式夠用）
 - **語音（使用者指定的下一個大工程）**：Codec2 native lib **沒編譯**（F-055）→ 要 **Android NDK 交叉編譯 `libcodec2.so`（arm64-v8a）** 放 `app/libs/codec2/android/`，PTT 的 `Codec2.Decode` 才不會 DllNotFound；iOS 音訊 F-056 為 stub
 - 其他 backlog：F-035 管理式洪泛、離線訊息暫存…（見 SPEC）
+
+## 三之一、語音設計決策（2026-06-15，使用者拍板，實作前定）
+- **LoRa 模式切換**：平時 SF9/BW125（長距、文字用）；**PTT 通話期間全網切 SF7/BW500（高速）**，
+  放開回 SF9/BW125。原因：SF9/BW125 僅 ~1.8kbps，塞不下 Codec2 2400bps；SF7/BW500 ~22kbps 才夠。
+  需設計「PTT 開始/結束」的全網協調信號（控制封包），讓收發雙方同步切換 SF/BW。
+- **單次 PTT 限時 30 秒**：到點自動放開 + 嗶聲。原因：① 台灣 920-925MHz ISM duty-cycle 合規；
+  ② 半雙工避免一人長時間佔頻道；③ 省電/airtime。（數字可調）
+- **RxDutyCycle 省電 → 永久不做（拿掉）**：維持全程連續接收。先前 06-08 handoff 一-4／待辦-3、
+  CLAUDE.md 電源管理章節提的「日後重啟用 RxDutyCycle（需加長前導碼）」**作廢**，別再列為待辦。
 
 ## 四、本 session 踩雷／關鍵技術點（省得回家再踩）
 - **MapLibre GL v4 的 `addProtocol`**：handler 必須 `async`、回傳 `{ data: ArrayBuffer }`（v4 移除了舊 callback 介面；用 callback 會「圖磚永遠載不出」——衛星空白就是這個）

@@ -4,6 +4,7 @@
 @using LoRaPTT.Services
 @using Microsoft.JSInterop
 @using Microsoft.Maui.Devices.Sensors
+@using System.Net.Http
 @inject NodeRegistry Registry
 @inject IMessagingService Messaging
 @inject IJSRuntime JS
@@ -18,6 +19,7 @@
         <button class="map-btn" @onclick="RecenterSelfAsync" title="回到自己"><span class="oi oi-map-marker"></span></button>
         <button class="map-btn" @onclick="ToggleList" title="節點清單"><span class="oi oi-people"></span></button>
         <button class="map-btn" @onclick="ToggleBaseAsync" title="@(_satellite ? "切換街道圖" : "切換衛星圖")"><span class="oi oi-layers"></span></button>
+        <button class="map-btn @(_radar ? "active" : "")" @onclick="ToggleRadarAsync" title="氣象雷達"><span class="oi oi-rain"></span></button>
     </div>
 
     <!-- 右下角資訊浮卡（半透明，直排）：進來顯示自己；點 marker 顯示該節點 -->
@@ -85,6 +87,7 @@
     .map-tools { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
     .map-btn { width: 44px; height: 44px; border: none; border-radius: 8px; background: rgba(20,20,25,0.85); color: #fff; font-size: 1.25rem; cursor: pointer; }
     .map-btn:active { background: rgba(60,60,70,0.9); }
+    .map-btn.active { background: rgba(13,110,253,0.85); }
     .map-card { position: absolute; right: 12px; bottom: 24px; z-index: 10; background: rgba(15,18,22,0.72); color: #fff; border: 1px solid rgba(255,255,255,0.13); border-radius: 7px; padding: 5px 9px; min-width: 128px; max-width: 60%; backdrop-filter: blur(4px); }
     .mc-status { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.03em; }
     .mc-name { font-size: 0.82rem; font-weight: 700; line-height: 1.2; }
@@ -101,6 +104,7 @@
     private DotNetObjectReference<MapPage>? _ref;  // 供 JS 回呼 marker 點選
     private bool _showList;                          // 節點清單 dialog 開關
     private bool _satellite;                         // 底圖是否為衛星(NLSC)
+    private bool _radar;                             // CWA 雷達疊加是否開啟
     private CardInfo? _card;                         // 下方浮卡內容
     private double _selfLat, _selfLon;               // 自身座標（手機 GPS）
     private double? _selfAlt, _selfCourse;           // 自身高度（公尺）與方位（度）
@@ -228,6 +232,34 @@
     {
         _satellite = !_satellite;
         await JS.InvokeVoidAsync("loraMap.setBaseLayer", _satellite ? "sat" : "street");
+    }
+
+    // 雷達圖檔（S3 公開但無 CORS → 由 .NET 原生 HTTP 抓回轉 data URL 給地圖）
+    private static readonly HttpClient _radarHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private const string RadarUrl = "https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0058-005.png";
+
+    /// <summary>開/關 CWA 氣象雷達疊加層。S3 圖檔無 CORS → 由 .NET 抓回轉 data URL 傳給地圖</summary>
+    private async Task ToggleRadarAsync()
+    {
+        _radar = !_radar;
+        if (_radar)
+        {
+            try
+            {
+                var bytes = await _radarHttp.GetByteArrayAsync(RadarUrl);
+                var dataUrl = "data:image/png;base64," + Convert.ToBase64String(bytes);
+                await JS.InvokeVoidAsync("loraMap.toggleRadar", true, dataUrl);
+            }
+            catch (Exception ex)
+            {
+                _radar = false; // 抓取失敗（多半是當前網路無對外網際網路）→ 回復狀態
+                Console.WriteLine("LPTT: 雷達圖抓取失敗: " + ex.Message);
+            }
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("loraMap.toggleRadar", false, (string?)null);
+        }
     }
 
     /// <summary>廣播 PING 主動探測</summary>

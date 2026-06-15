@@ -23,6 +23,26 @@
         }
     };
 
+    // CWA 雷達整合回波透明圖層(較大範圍)；範圍取自 CWA 開放資料 API（已驗證）。
+    // image source 角點順序：左上,右上,右下,左下（[lon,lat]）；範圍 經 115.00-126.50 / 緯 17.75-29.25。
+    // 圖檔由 .NET 端抓回（S3 無 CORS，WebGL 貼圖會被擋）→ 以 data URL 傳入。
+    const RADAR_COORDS = [[115.00, 29.25], [126.50, 29.25], [126.50, 17.75], [115.00, 17.75]];
+    let radarOn = false;
+    let radarImg = null; // .NET 傳入的 data:image/png;base64,...
+
+    // 加上雷達疊加層（半透明）
+    function addRadar() {
+        if (!map || !radarImg || map.getSource('cwaRadar')) return;
+        map.addSource('cwaRadar', { type: 'image', url: radarImg, coordinates: RADAR_COORDS });
+        map.addLayer({ id: 'cwaRadar', type: 'raster', source: 'cwaRadar', paint: { 'raster-opacity': 0.65 } });
+    }
+    // 移除雷達疊加層
+    function removeRadar() {
+        if (!map) return;
+        if (map.getLayer('cwaRadar')) { map.removeLayer('cwaRadar'); }
+        if (map.getSource('cwaRadar')) { map.removeSource('cwaRadar'); }
+    }
+
     window.loraMap = {
         // 初始化地圖。dotnet=DotNetObjectReference，lat/lon=初始中心，hasSelf=是否已有自身定位
         init: function (dotnet, lat, lon, hasSelf) {
@@ -106,7 +126,17 @@
 
         // 切換底圖：'street' 街道 / 'sat' 衛星(NLSC)。Marker 為 DOM 浮層，setStyle 不影響。
         setBaseLayer: function (type) {
-            if (map) { map.setStyle(STYLES[type] || STYLES.street); }
+            if (!map) return;
+            map.setStyle(STYLES[type] || STYLES.street);
+            // setStyle 會重載 style、清掉雷達層 → 若雷達仍開著，待新 style 載好後重加
+            if (radarOn) { map.once('styledata', addRadar); }
+        },
+
+        // 開/關 CWA 雷達疊加層；dataUrl = .NET 抓回的雷達 PNG（data:image/png;base64,...）
+        toggleRadar: function (on, dataUrl) {
+            radarOn = !!on;
+            if (dataUrl) { radarImg = dataUrl; }
+            if (radarOn) { addRadar(); } else { removeRadar(); }
         },
 
         // 釋放地圖（離開頁面）

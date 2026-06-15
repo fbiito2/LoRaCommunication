@@ -6,6 +6,7 @@ uint16_t deviceId   = 0;
 String   deviceName = "LoRaPTT";
 String   appStatus  = "none";
 String   fwVer      = "";
+bool     wifiApOn   = false;
 float    loraFreq   = 920.0f;
 uint8_t  loraSf     = 7;
 int16_t  lastRssi   = 0;
@@ -23,14 +24,30 @@ static Page      _page    = Page::STATUS;
 static uint32_t  _lastMs  = 0;
 static const uint32_t UPDATE_MS = 1000; // 每秒更新顯示
 static uint32_t  _holdUntil = 0;        // 警示畫面（SOS）強制保留到此時間點
+static bool      _screenOn  = true;     // 螢幕電源狀態（Meshtastic 式閒置關螢幕）
+static uint32_t  _lastActMs = 0;        // 最近活動時間（按鍵/收發 → 喚醒並重置）
+static const uint32_t SCREEN_TIMEOUT_MS = 20000; // 閒置 20 秒關螢幕
 
 void init() {
     // M5Unified 已在 M5.begin() 初始化 OLED
     M5.Display.setRotation(0);
     M5.Display.setTextSize(1);
     M5.Display.fillScreen(TFT_BLACK);
+    _lastActMs = millis(); // 螢幕閒置計時自開機起算
     Serial.println("[Display] OLED 初始化完成");
 }
+
+// 喚醒螢幕並重置閒置計時；睡著時才實際開面板（按鍵/收發訊息時呼叫）
+void wake() {
+    _lastActMs = millis();
+    if (!_screenOn) {
+        M5.Display.wakeup();
+        _screenOn = true;
+        _lastMs = 0; // 強制立即重畫
+    }
+}
+
+bool isAwake() { return _screenOn; }
 
 void nextPage() {
     int next = ((int)_page + 1) % (int)Page::PAGE_COUNT;
@@ -40,7 +57,14 @@ void nextPage() {
 
 void loop() {
     uint32_t now = millis();
-    if ((int32_t)(_holdUntil - now) > 0) return; // 警示畫面保留中，暫停一般頁面重畫
+    // 螢幕閒置自動關（Meshtastic 式）：逾時且非保留畫面 → 關面板省電
+    if (_screenOn && (int32_t)(_holdUntil - now) <= 0
+        && (now - _lastActMs > SCREEN_TIMEOUT_MS)) {
+        M5.Display.sleep();
+        _screenOn = false;
+    }
+    if (!_screenOn) return;                       // 螢幕關著就不重畫
+    if ((int32_t)(_holdUntil - now) > 0) return;  // 警示畫面保留中，暫停一般頁面重畫
     if (now - _lastMs < UPDATE_MS) return;
     _lastMs = now;
 
@@ -53,12 +77,18 @@ void loop() {
         M5.Display.printf("%.8s\n", deviceName.c_str());
         M5.Display.printf("APP:%s\n", appStatus.c_str());
         M5.Display.printf("FW:%s\n", fwVer.c_str()); // 韌體版本（64×48 第 4 行，ASCII）
+        M5.Display.printf("WiFi:%s\n", wifiApOn ? "ON" : "OFF"); // WiFi AP 開關（第 5 行）
         break;
 
     case Page::NETWORK:
-        M5.Display.println("Network");
-        M5.Display.printf("%.10s\n", wifiSsid.c_str());
-        M5.Display.printf("%.13s\n", wifiIp.c_str());
+        if (wifiApOn) {
+            M5.Display.println("WiFi ON");
+            M5.Display.printf("%.10s\n", wifiSsid.c_str());
+            M5.Display.printf("%.13s\n", wifiIp.c_str());
+        } else {
+            M5.Display.println("Network");
+            M5.Display.println("WiFi OFF");
+        }
         break;
 
     case Page::LORA:
@@ -91,6 +121,7 @@ void loop() {
 }
 
 void showSosSent() {
+    M5.Display.wakeup(); _screenOn = true; _lastActMs = millis(); // 螢幕睡著也要亮
     M5.Display.fillScreen(TFT_BLACK);
     M5.Display.setCursor(0, 8);
     M5.Display.setTextSize(2);
@@ -102,6 +133,7 @@ void showSosSent() {
 }
 
 void showSosReceived(uint16_t fromId) {
+    M5.Display.wakeup(); _screenOn = true; _lastActMs = millis(); // 螢幕睡著也要亮
     M5.Display.fillScreen(TFT_BLACK);
     M5.Display.setCursor(0, 0);
     M5.Display.setTextSize(1);

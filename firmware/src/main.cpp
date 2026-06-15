@@ -22,7 +22,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.7.1"
+#define FW_VERSION "0.7.2"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -33,6 +33,11 @@ volatile bool g_usbDataMode = false;
 // ── 測試用：每 3 秒自動廣播一個 beacon（雙機 LoRa 收發驗證；測完設 0）──
 // 實機已驗證雙機收發成功（CDB8 收到 BF8C，RSSI -27），平時關閉。
 #define LORA_TEST_BEACON 0
+
+// ── WiFi 閒置自動關（F-041 省電）────────────────────────────
+// 5 分鐘內無 station 連著且無 APP 握手 → 自動關 AP 省電（~省 40mA）。
+// 有人連著就絕不關（避免反覆斷線重連）；長按手動開關不受此限。
+#define WIFI_IDLE_OFF_MS 300000
 
 // ── 線路幀類型（手機 ↔ C6L，USB/WiFi 共用）─────────────────
 // 傳輸層各自負責邊界（USB 2-byte 長度前綴 / WiFi 一個 datagram）。
@@ -135,6 +140,7 @@ static void replyPing(const LoRaPacket& pingPkt) {
 static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
     PowerMgr::onActivity();
     Led::setLoRaRx();
+    Display::wake(); // 收到訊息 → 喚醒螢幕（Meshtastic 式）
     Display::lastRssi = rssi;
     Display::rxCount++;
     Ota::setRxStats(Display::rxCount, rssi, pkt.srcId); // 供 /version 觀察雙機收訊
@@ -437,8 +443,13 @@ void setup() {
     // HMI
     Led::setBaseWaiting(); // WiFi AP 已開、尚無 APP 握手 → 藍色閃爍
     Button::init();
-    Button::onShortPress([]() { Display::nextPage(); });
+    Button::onShortPress([]() {
+        // 螢幕睡著時第一下只喚醒不換頁；醒著時短按才換頁（Meshtastic 式）
+        if (Display::isAwake()) Display::nextPage();
+        else                    Display::wake();
+    });
     Button::onLongPress([]() {
+        Display::wake(); // 長按操作 → 喚醒螢幕，好看到 WiFi 狀態變化
         // F-041：長按 3 秒 → 開/關 WiFi AP（省電）
         bool en = !wifiService.isApEnabled();
         wifiService.setApEnabled(en);
@@ -490,6 +501,23 @@ void loop() {
     g_usbDataMode = u; // USB 有 APP 握手 → CDC 為資料通道 → 抑制除錯 log
     Display::appStatus  = (u && w) ? "USB+WiFi" : u ? "USB" : w ? "WiFi" : "none";
     Display::relayCount = relayHandler.forwardCount();
+    Display::wifiApOn   = wifiService.isApEnabled();
+
+    // WiFi 閒置自動關（F-041 省電）：5 分鐘無 station 連著且無 WiFi APP 握手 → 關 AP。
+    // 有人連著就重置計時、絕不關（避免反覆斷線重連）；長按手動關不受此限。
+    {
+        static uint32_t _wifiActiveMs = 0;
+        if (wifiService.isApEnabled()) {
+            if (WiFi.softAPgetStationNum() > 0 || _transports[1].hasApp)
+                _wifiActiveMs = millis();
+            else if (millis() - _wifiActiveMs > WIFI_IDLE_OFF_MS) {
+                wifiService.setApEnabled(false);
+                _transports[1].hasApp = false;
+            }
+        } else {
+            _wifiActiveMs = millis(); // 關閉中持續重置，重開後重新計時
+        }
+    }
 
 #if ENABLE_LORA
     loraHandler.loop();

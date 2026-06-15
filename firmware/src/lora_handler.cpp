@@ -160,6 +160,15 @@ void LoRaHandler::setDutyCycle(bool enable) {
     }
 }
 
+void LoRaHandler::setMode(float bw, uint8_t sf) {
+    // 執行期切換頻寬/展頻因子（F-052 語音 PTT）。SX1262 支援動態變更，
+    // 切完重啟接收。全網各節點靠 PTT_START/END 控制封包同步切換。
+    _radio.setBandwidth(bw);
+    _radio.setSpreadingFactor(sf);
+    _radio.startReceive();
+    Serial.printf("[LoRa] 切換模式 SF%d BW%.0f\n", sf, bw);
+}
+
 void LoRaHandler::loop() {
     if (!_isrFlag) return;
     _isrFlag = false;

@@ -23,7 +23,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.7.5"
+#define FW_VERSION "0.8.0"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -46,6 +46,11 @@ volatile bool g_usbDataMode = false;
 #define POS_SMART_DIST_M  30     // 移動超過此距離（公尺）即提早廣播
 #define POS_SMART_MIN_MS  15000  // 兩次廣播最短間隔（避免移動時狂發）
 
+// ── 語音 PTT LoRa 模式切換（F-052）──────────────────────────
+// 通話期間全網切 SF7/BW500（塞得下 Codec2 2400bps）。漏接 PTT_END 時靠逾時自動切回，
+// 避免卡在語音頻道收不到一般長距訊息。逾時須 > APP 單次 PTT 上限(30s)。
+#define VOICE_MODE_TIMEOUT_MS 35000
+
 // ── 線路幀類型（手機 ↔ C6L，USB/WiFi 共用）─────────────────
 // 傳輸層各自負責邊界（USB 2-byte 長度前綴 / WiFi 一個 datagram）。
 //   LINK_DATA：phone→C6L = [01][LoRa封包]；C6L→phone = [01][RSSI int16 BE][LoRa封包]
@@ -62,6 +67,9 @@ static Transport _transports[2];
 static int       _transportCount = 0;
 static DeviceConfig _cfg;
 static bool      _loraOk = false; // LoRa 初始化結果（心跳輸出用）
+static bool      _voiceMode = false;       // 是否處於語音模式（SF7/BW500）
+static uint32_t  _voiceModeUntil = 0;      // 語音模式逾時點（防漏接 PTT_END 卡住）
+static uint16_t  _ctrlSeq = 0xE000;        // PTT 控制封包專用 SEQ 區段
 
 static bool anyAppConnected() {
     for (int i = 0; i < _transportCount; i++)
@@ -164,6 +172,30 @@ static void sendPosition() {
     if (!g_usbDataMode) Serial.printf("[POS] 廣播座標 %.6f,%.6f\n", la, lo);
 }
 
+// ── 語音 PTT 模式切換（F-052）──────────────────────────────
+static void enterVoiceMode() {
+    _voiceModeUntil = millis() + VOICE_MODE_TIMEOUT_MS;
+    if (_voiceMode) return;
+    loraHandler.setMode(LORA_BW_VOICE, LORA_SF_VOICE);
+    _voiceMode = true;
+    PowerMgr::onActivity();
+}
+static void exitVoiceMode() {
+    if (!_voiceMode) return;
+    loraHandler.setMode(LORA_BW, LORA_SF);
+    _voiceMode = false;
+}
+// 廣播 PTT 控制封包（在「對方當下在聽的頻道」上發：START 於 SF9、END 於 SF7）
+static void sendPttCtrl(uint8_t sub) {
+    LoRaPacket pkt = {};
+    pkt.dstId      = DST_BROADCAST;
+    pkt.type       = PKT_TYPE_CTRL;
+    pkt.seq        = _ctrlSeq++;
+    pkt.payload[0] = sub;
+    pkt.payloadLen = 1;
+    loraHandler.sendPacket(pkt);
+}
+
 // ── 收到 LoRa 封包（給自己/廣播/群組，已解密）→ 推給手機 ────
 static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
     PowerMgr::onActivity();
@@ -185,6 +217,15 @@ static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
         memcpy(&la, pkt.payload + 2, 8); memcpy(&lo, pkt.payload + 10, 8);
         NodeDb::setPos(pkt.srcId, la, lo); // POS/SOS payload [id 2][lat 8][lon 8]
     }
+
+    // F-052：收到 PTT 控制封包 → 全網同步切 LoRa 模式
+    if (pkt.type == PKT_TYPE_CTRL && pkt.payloadLen >= 1) {
+        if (pkt.payload[0] == CTRL_PTT_START)      enterVoiceMode();
+        else if (pkt.payload[0] == CTRL_PTT_END)   exitVoiceMode();
+    }
+    // 收到語音幀 → 續延逾時（說話方持續發，全網就維持在 SF7）
+    if (pkt.type == PKT_TYPE_VOICE && _voiceMode)
+        _voiceModeUntil = millis() + VOICE_MODE_TIMEOUT_MS;
 
     // F-073：收到 SOS → 全節點警報（不管有沒有接手機）
     if (pkt.type == PKT_TYPE_SOS) {
@@ -257,6 +298,19 @@ static void handleCtrl(int idx, const char* json, size_t len) {
         configSave(_cfg);
         const char* resp = "{\"status\":\"ok\"}";
         sendCtrl(idx, resp, strlen(resp));
+        return;
+    }
+
+    if (strcmp(cmd, "voice_start") == 0) {
+        // F-052：APP 按下 PTT → 先在 SF9 廣播 PTT_START 讓全網切語音模式，再切自己
+        sendPttCtrl(CTRL_PTT_START);
+        enterVoiceMode();
+        return;
+    }
+    if (strcmp(cmd, "voice_end") == 0) {
+        // F-052：APP 放開 PTT → 在 SF7 廣播 PTT_END 讓全網切回長距，再切自己
+        sendPttCtrl(CTRL_PTT_END);
+        exitVoiceMode();
         return;
     }
 }
@@ -531,6 +585,9 @@ void loop() {
     usbSerialService.loop();
     wifiService.loop();
     Ota::loop(); // 處理 HTTP OTA 更新請求
+
+    // F-052：語音模式逾時保險 — 漏接 PTT_END 時自動切回長距，免得卡在 SF7 收不到一般訊息
+    if (_voiceMode && (int32_t)(millis() - _voiceModeUntil) > 0) exitVoiceMode();
 
     // GPS：讀取/解析 NMEA，並回報給 /version（實機定位驗證）
     Gps::loop();

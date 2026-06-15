@@ -22,6 +22,9 @@
 #define LORA_FREQ       920.0f  // MHz（台灣 ISM）
 #define LORA_BW         125.0f  // kHz
 #define LORA_SF         9
+// 語音 PTT 模式（F-052）：通話期間全網切高速短距，才塞得下 Codec2 2400bps（SF9/BW125 僅 ~1.8kbps）
+#define LORA_BW_VOICE   500.0f  // kHz
+#define LORA_SF_VOICE   7
 #define LORA_CR         5       // 4/5
 #define LORA_SYNC_WORD  0x12    // Private network
 #define LORA_TX_POWER   22      // dBm
@@ -41,6 +44,7 @@ public:
     bool sendRaw(const uint8_t* data, size_t len); // 原樣發送（中繼轉發用，不改封包內容）
     void setPacketCallback(LoRaPacketCallback cb);
     void setDutyCycle(bool enable);   // 電源管理切換
+    void setMode(float bw, uint8_t sf); // 執行期切換 SF/BW（F-052 語音 PTT 長/短距模式）
     void loop();
     int  lastError() const { return _lastErr; } // 最後一次 radio.begin 錯誤碼（實機除錯）
 

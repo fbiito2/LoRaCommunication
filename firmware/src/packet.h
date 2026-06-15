@@ -31,6 +31,11 @@ static inline bool dstIsGroup(uint16_t dst) {
 #define PKT_TYPE_SOS    0x06  // SOS 緊急求救
 #define PKT_TYPE_POS    0x07  // 定位定時廣播（GPS 座標）
 
+// ── PKT_TYPE_CTRL 的子類型（payload[0]）─────────────────────
+// 語音 PTT 全網 LoRa 模式切換（F-052）：PTT 期間切 SF7/BW500 高速、結束切回 SF9/BW125
+#define CTRL_PTT_START  0x01  // 開始通話：收到→切語音模式(SF7/BW500)
+#define CTRL_PTT_END    0x02  // 結束通話：收到→切回長距模式(SF9/BW125)
+
 // 各類型封包的 HOP 初始值
 #define MAX_HOP_TEXT    5     // 一般文字/群組/廣播
 #define MAX_HOP_ACK     5     // ACK 確認

@@ -22,7 +22,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.7.3"
+#define FW_VERSION "0.7.4"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -38,6 +38,12 @@ volatile bool g_usbDataMode = false;
 // 5 分鐘內無 station 連著且無 APP 握手 → 自動關 AP 省電（~省 40mA）。
 // 有人連著就絕不關（避免反覆斷線重連）；長按手動開關不受此限。
 #define WIFI_IDLE_OFF_MS 300000
+
+// ── 智慧定位（F-074 強化，參考 Meshtastic）──────────────────
+// 移動超過門檻就提早廣播、靜止則退回最大間隔(posIntervalSec)：
+// 既即時反映移動、又不在靜止時狂發浪費 airtime。
+#define POS_SMART_DIST_M  30     // 移動超過此距離（公尺）即提早廣播
+#define POS_SMART_MIN_MS  15000  // 兩次廣播最短間隔（避免移動時狂發）
 
 // ── 線路幀類型（手機 ↔ C6L，USB/WiFi 共用）─────────────────
 // 傳輸層各自負責邊界（USB 2-byte 長度前綴 / WiFi 一個 datagram）。
@@ -583,12 +589,23 @@ void loop() {
     }
 #endif
 
-    // ── 定位定時廣播：有 GPS fix 時，每 posIntervalSec 秒廣播自身座標 ──
+    // ── 智慧定位廣播（F-074）：移動 > 門檻就提早發，靜止退回最大間隔 ──
     static uint32_t _posMs = 0;
-    if (_loraOk && _cfg.posIntervalSec > 0 && Gps::hasFix()
-        && millis() - _posMs >= (uint32_t)_cfg.posIntervalSec * 1000) {
-        _posMs = millis();
-        sendPosition();
+    static double   _lastPosLat = 0, _lastPosLon = 0;
+    if (_loraOk && _cfg.posIntervalSec > 0 && Gps::hasFix()) {
+        uint32_t now = millis();
+        double la = Gps::lat(), lo = Gps::lon();
+        // 粗略平面距離（公尺）：緯度 1°≈111320m，經度乘 cos(lat)
+        double dLat = (la - _lastPosLat) * 111320.0;
+        double dLon = (lo - _lastPosLon) * 111320.0 * cos(la * PI / 180.0);
+        double moved = sqrt(dLat * dLat + dLon * dLon);
+        bool maxElapsed  = now - _posMs >= (uint32_t)_cfg.posIntervalSec * 1000;
+        bool movedEnough = moved > POS_SMART_DIST_M && (now - _posMs >= POS_SMART_MIN_MS);
+        if (maxElapsed || movedEnough) {
+            _posMs = now;
+            _lastPosLat = la; _lastPosLon = lo;
+            sendPosition();
+        }
     }
 
     // ── 心跳輸出（每 2 秒）：實機監看用，原生 USB 重置後仍能持續觀察 ──

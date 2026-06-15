@@ -232,7 +232,7 @@ C6L 提供兩種傳輸層，**可同時啟用**，上層封包格式完全一致
 | **F-071** C6L 觸發 | User Button **快速連按 3 下（1 秒內）** → 發送 SOS。Buzzer 長嗶確認，OLED 顯示 "SOS SENT"。**不需手機也能求救** |
 | **F-072** APP 觸發 | APP 主畫面 SOS 按鈕，**長按 3 秒觸發**（防誤觸）。附帶手機 GPS 座標 + 可選簡短文字 |
 | **F-073** 收到 SOS | 所有節點：Buzzer 連續長響 3 秒 + RGB LED 紅色快閃 + OLED 顯示 "!!! SOS !!! ID:xxxx"；APP：全螢幕警示彈窗 + GPS 座標顯示 + 手機震動 |
-| **F-074** 定位定時廣播 | 有 GPS fix 時定時廣播自身座標：TYPE=**0x07**，DST=0xFFFF，**HOP=1**（限制洪泛流量），Payload `[ID 2B][Lat 8B][Lon 8B]`（小端 double，格式同 SOS GPS）。間隔存 NVS（`pos_interval`，預設 **30 秒**，0=關，可經 set_config 遠端設定）。**韌體側 ✅ FW 0.7.3；APP 端解析 0x07 顯示於地圖/清單待做** |
+| **F-074** 定位定時廣播 | 有 GPS fix 時定時廣播自身座標：TYPE=**0x07**，DST=0xFFFF，**HOP=1**（限制洪泛流量），Payload `[ID 2B][Lat 8B][Lon 8B]`（小端 double，格式同 SOS GPS）。**智慧定位**（FW 0.7.4，參考 Meshtastic）：移動 > 30m 即提早廣播(最短間隔 15 秒防狂發)、靜止則退回最大間隔 `pos_interval`(存 NVS，預設 **30 秒**，0=關，可經 set_config 遠端設定)。**韌體側 ✅；APP 端解析 0x07 顯示於地圖/清單待做** |
 
 > SOS 封包重複發送 3 次（間隔 2 秒），提高到達率。不等 ACK。
 

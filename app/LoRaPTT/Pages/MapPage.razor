@@ -1,0 +1,232 @@
+@page "/map"
+@using LoRaPTT.ViewModels
+@using LoRaPTT.Models
+@using LoRaPTT.Services
+@using Microsoft.JSInterop
+@using Microsoft.Maui.Devices.Sensors
+@inject NodeRegistry Registry
+@inject IMessagingService Messaging
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="map-root">
+    <!-- MapLibre 地圖容器 -->
+    <div id="lora-map" class="map-canvas"></div>
+
+    <!-- 右上按鈕區（F-037）-->
+    <div class="map-tools">
+        <button class="map-btn" @onclick="RecenterSelfAsync" title="回到自己">🧭</button>
+        <button class="map-btn" @onclick="ToggleList" title="節點清單">☰</button>
+    </div>
+
+    <!-- 下方資訊浮卡（半透明）：進來顯示自己；點 marker 顯示該節點 -->
+    <div class="map-card">
+        @if (_card is null)
+        {
+            <div class="text-muted small">定位中...</div>
+        }
+        else
+        {
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-bold @(_card.IsSelf ? "text-info" : "text-warning")">@_card.Title</span>
+                <span class="small @(_card.Ok ? "text-success" : "text-danger")">@_card.Status</span>
+            </div>
+            <div class="small">@_card.Coords</div>
+            @if (!string.IsNullOrEmpty(_card.Sub))
+            {
+                <div class="small text-muted">@_card.Sub</div>
+            }
+        }
+    </div>
+
+    <!-- 節點清單 dialog（地圖頁主清單）-->
+    @if (_showList)
+    {
+        <div class="map-dialog-backdrop" @onclick="ToggleList">
+            <div class="map-dialog" @onclick:stopPropagation="true">
+                <div class="d-flex align-items-center mb-2">
+                    <h6 class="mb-0">節點清單（@Registry.Count）</h6>
+                    <button class="btn btn-sm btn-outline-info ms-auto me-2" @onclick="PingAsync">探測</button>
+                    <button class="btn-close btn-close-white" @onclick="ToggleList"></button>
+                </div>
+                @if (Registry.Count == 0)
+                {
+                    <p class="text-muted small mb-0">尚未聽到任何節點，按「探測」或等待傳訊</p>
+                }
+                else
+                {
+                    @foreach (var n in Registry.GetNodes())
+                    {
+                        <div class="map-node-row" @onclick="() => SelectNode(n)">
+                            <span class="fw-bold">0x@n.DeviceIdHex</span>
+                            @if (!string.IsNullOrEmpty(n.Name))
+                            {
+                                <span class="text-info ms-1">@n.Name</span>
+                            }
+                            <span class="small text-muted ms-2">@NodesViewModel.AgeText(n) · @n.Rssi dBm</span>
+                            @if (n.HasPosition)
+                            {
+                                <span class="small text-success ms-2">📍</span>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    /* 版面與 marker 樣式（放頁內 style = 全域，才套得到 JS 動態建立的 marker div）*/
+    .map-root { position: relative; width: 100%; height: 100vh; background: #20242b; overflow: hidden; }
+    .map-canvas { position: absolute; inset: 0; }
+    .map-tools { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+    .map-btn { width: 44px; height: 44px; border: none; border-radius: 8px; background: rgba(20,20,25,0.85); color: #fff; font-size: 1.25rem; cursor: pointer; }
+    .map-btn:active { background: rgba(60,60,70,0.9); }
+    .map-card { position: absolute; left: 12px; right: 12px; bottom: 16px; z-index: 10; background: rgba(15,18,22,0.82); color: #fff; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 10px 14px; backdrop-filter: blur(4px); }
+    .map-dialog-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 20; display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; }
+    .map-dialog { background: #1a1d22; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 14px; width: 90%; max-width: 420px; max-height: 70vh; overflow: auto; }
+    .map-node-row { padding: 8px 6px; border-bottom: 1px solid #2a2d33; cursor: pointer; }
+    .lora-self-dot { width: 18px; height: 18px; border-radius: 50%; background: #00e5ff; border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,229,255,0.8); cursor: pointer; }
+    .lora-node-dot { width: 16px; height: 16px; border-radius: 50%; background: #ffc107; border: 2px solid #fff; box-shadow: 0 0 6px rgba(0,0,0,0.6); cursor: pointer; }
+</style>
+
+@code {
+    private DotNetObjectReference<MapPage>? _ref;  // 供 JS 回呼 marker 點選
+    private bool _showList;                          // 節點清單 dialog 開關
+    private CardInfo? _card;                         // 下方浮卡內容
+    private double _selfLat, _selfLon;               // 自身座標（手機 GPS）
+    private bool _hasSelf;                           // 是否取得自身定位
+
+    /// <summary>下方浮卡顯示內容</summary>
+    private sealed class CardInfo
+    {
+        public bool IsSelf;
+        public string Title = "";
+        public string Status = "";
+        public bool Ok;
+        public string Coords = "";
+        public string? Sub;
+    }
+
+    /// <summary>首次渲染後初始化地圖（容器需先存在）</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _ref = DotNetObjectReference.Create(this);
+        await TryGetSelfLocationAsync();
+        await JS.InvokeVoidAsync("loraMap.init", _ref,
+            _hasSelf ? _selfLat : 0, _hasSelf ? _selfLon : 0, _hasSelf);
+        ShowSelfCard();
+        await PushNodesAsync();
+        Registry.Changed += OnRegistryChanged;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>取得手機 GPS 定位（失敗/無權限則無自身點，地圖用預設中心）</summary>
+    private async Task TryGetSelfLocationAsync()
+    {
+        try
+        {
+            var loc = await Geolocation.Default.GetLocationAsync(
+                new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(8)));
+            if (loc != null) { _selfLat = loc.Latitude; _selfLon = loc.Longitude; _hasSelf = true; }
+        }
+        catch { /* 無定位權限/逾時 → 不顯示自身點 */ }
+    }
+
+    /// <summary>浮卡切換為「自己」</summary>
+    private void ShowSelfCard()
+    {
+        var id = Messaging.LocalDeviceId;
+        _card = new CardInfo
+        {
+            IsSelf = true,
+            Title = Messaging.LocalNickname,
+            Ok = id.HasValue,
+            Status = id.HasValue ? $"0x{id:X4}" : "NOT CONNECTED",
+            Coords = _hasSelf ? $"{_selfLat:F6}, {_selfLon:F6}" : "無 GPS 定位",
+            Sub = Messaging.FirmwareVersion is null ? null : $"韌體 {Messaging.FirmwareVersion}",
+        };
+    }
+
+    /// <summary>浮卡切換為某節點</summary>
+    private void ShowNodeCard(NodeInfo n)
+    {
+        _card = new CardInfo
+        {
+            IsSelf = false,
+            Title = string.IsNullOrEmpty(n.Name) ? $"0x{n.DeviceIdHex}" : $"{n.Name}（0x{n.DeviceIdHex}）",
+            Ok = true,
+            Status = $"{n.Rssi} dBm",
+            Coords = n.HasPosition ? $"{n.Lat:F6}, {n.Lon:F6}" : "無座標",
+            Sub = NodesViewModel.AgeText(n),
+        };
+    }
+
+    /// <summary>把有定位的節點推給地圖更新 markers</summary>
+    private async Task PushNodesAsync()
+    {
+        var nodes = Registry.GetNodes()
+            .Where(n => n.HasPosition)
+            .Select(n => new { id = n.DeviceIdHex, name = n.Name ?? "", lat = n.Lat, lon = n.Lon })
+            .ToArray();
+        await JS.InvokeVoidAsync("loraMap.setNodes", new object[] { nodes });
+    }
+
+    /// <summary>JS 回呼：點地圖上的節點 marker → 浮卡顯示該節點</summary>
+    /// <param name="idHex">節點 ID 的 16 進位字串</param>
+    [JSInvokable]
+    public async Task OnNodeMarkerClick(string idHex)
+    {
+        var node = Registry.GetNodes().FirstOrDefault(n => n.DeviceIdHex == idHex);
+        if (node != null)
+        {
+            ShowNodeCard(node);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>清單中選節點：關 dialog、浮卡顯示、地圖飛到該點</summary>
+    private async Task SelectNode(NodeInfo n)
+    {
+        _showList = false;
+        ShowNodeCard(n);
+        if (n.HasPosition) { await JS.InvokeVoidAsync("loraMap.flyTo", n.Lat, n.Lon); }
+    }
+
+    /// <summary>回到自己：重新定位、地圖飛回、浮卡切回自己</summary>
+    private async Task RecenterSelfAsync()
+    {
+        await TryGetSelfLocationAsync();
+        if (_hasSelf)
+        {
+            await JS.InvokeVoidAsync("loraMap.setSelf", _selfLat, _selfLon);
+            await JS.InvokeVoidAsync("loraMap.flyToSelf", _selfLat, _selfLon);
+        }
+        ShowSelfCard();
+    }
+
+    /// <summary>開/關節點清單 dialog</summary>
+    private void ToggleList() => _showList = !_showList;
+
+    /// <summary>廣播 PING 主動探測</summary>
+    private async Task PingAsync()
+    {
+        try { await Messaging.SendPingAsync(); }
+        catch { /* 探測失敗不阻斷 UI */ }
+    }
+
+    /// <summary>NodeDB 變動 → 更新地圖 markers 與清單</summary>
+    private async void OnRegistryChanged()
+        => await InvokeAsync(async () => { await PushNodesAsync(); StateHasChanged(); });
+
+    /// <summary>離開頁面：取消訂閱、釋放地圖、釋放 .NET 參考</summary>
+    public async ValueTask DisposeAsync()
+    {
+        Registry.Changed -= OnRegistryChanged;
+        try { await JS.InvokeVoidAsync("loraMap.dispose"); }
+        catch { /* WebView 可能已釋放 */ }
+        _ref?.Dispose();
+    }
+}

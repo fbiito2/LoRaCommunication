@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
     <link href="css/app.css" rel="stylesheet" />
     <link href="LoRaPTT.styles.css" rel="stylesheet" />
+    <!-- MapLibre GL（節點地圖 F-037，函式庫本地打包，離線只缺圖磚）-->
+    <link href="lib/maplibre/maplibre-gl.css" rel="stylesheet" />
 </head>
 
 <body>
@@ -23,6 +25,9 @@
     </div>
 
     <script src="_framework/blazor.webview.js" autostart="false"></script>
+    <!-- MapLibre GL + 節點地圖互通（F-037）-->
+    <script src="lib/maplibre/maplibre-gl.js"></script>
+    <script src="js/map-interop.js"></script>
 
     <script>
         // 將指定容器捲到最底（聊天收到新訊息時自動滑到最新，像 Line）

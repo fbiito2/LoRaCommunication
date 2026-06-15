@@ -55,19 +55,18 @@
         return arr;
     }
 
-    // 註冊 loraoff://sat/{z}/{x}/{y}：向 .NET 取圖磚（離線優先 + 線上自動補快取）
+    // 註冊 loraoff://sat/{z}/{x}/{y}：向 .NET 取圖磚（離線優先 + 線上自動補快取）。
+    // 注意：MapLibre GL v4 的 addProtocol handler 須為 async、回傳 {data: ArrayBuffer}
+    //（v4 已移除舊的 callback 介面，用 callback 會導致圖磚永遠載不出來）。
     function registerOfflineProtocol() {
         if (protoRegistered || typeof maplibregl === 'undefined') return;
-        maplibregl.addProtocol('loraoff', function (params, callback) {
+        maplibregl.addProtocol('loraoff', async function (params) {
             const m = /loraoff:\/\/sat\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
-            if (!m || !dotNetRef) { callback(new Error('bad tile')); return { cancel: function () { } }; }
-            dotNetRef.invokeMethodAsync('GetOfflineTile', parseInt(m[1]), parseInt(m[2]), parseInt(m[3]))
-                .then(function (b64) {
-                    if (b64) { callback(null, b64ToArr(b64), null, null); }
-                    else { callback(new Error('no tile')); } // 沒下載且離線 → 空白圖磚
-                })
-                .catch(function (e) { callback(e); });
-            return { cancel: function () { } };
+            if (!m || !dotNetRef) throw new Error('bad tile url');
+            const b64 = await dotNetRef.invokeMethodAsync('GetOfflineTile',
+                parseInt(m[1]), parseInt(m[2]), parseInt(m[3]));
+            if (!b64) throw new Error('tile missing'); // 沒下載且離線 → 視為缺圖（空白）
+            return { data: b64ToArr(b64).buffer };
         });
         protoRegistered = true;
     }

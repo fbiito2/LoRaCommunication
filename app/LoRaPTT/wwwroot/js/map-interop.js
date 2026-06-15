@@ -14,7 +14,8 @@
             sources: {
                 nlsc: {
                     type: 'raster',
-                    tiles: ['https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}'],
+                    // 走本機協定：離線優先(讀本機已下載圖磚)，線上時自動補抓 NLSC 並快取
+                    tiles: ['loraoff://sat/{z}/{x}/{y}'],
                     tileSize: 256,
                     attribution: '© 內政部國土測繪中心'
                 }
@@ -43,6 +44,34 @@
         if (map.getSource('cwaRadar')) { map.removeSource('cwaRadar'); }
     }
 
+    // ── 離線圖磚協定（F-037 階段二）────────────────────────────
+    let protoRegistered = false;
+
+    // base64 → Uint8Array
+    function b64ToArr(b64) {
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) { arr[i] = bin.charCodeAt(i); }
+        return arr;
+    }
+
+    // 註冊 loraoff://sat/{z}/{x}/{y}：向 .NET 取圖磚（離線優先 + 線上自動補快取）
+    function registerOfflineProtocol() {
+        if (protoRegistered || typeof maplibregl === 'undefined') return;
+        maplibregl.addProtocol('loraoff', function (params, callback) {
+            const m = /loraoff:\/\/sat\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
+            if (!m || !dotNetRef) { callback(new Error('bad tile')); return { cancel: function () { } }; }
+            dotNetRef.invokeMethodAsync('GetOfflineTile', parseInt(m[1]), parseInt(m[2]), parseInt(m[3]))
+                .then(function (b64) {
+                    if (b64) { callback(null, b64ToArr(b64), null, null); }
+                    else { callback(new Error('no tile')); } // 沒下載且離線 → 空白圖磚
+                })
+                .catch(function (e) { callback(e); });
+            return { cancel: function () { } };
+        });
+        protoRegistered = true;
+    }
+
     window.loraMap = {
         // 初始化地圖。dotnet=DotNetObjectReference，lat/lon=初始中心，hasSelf=是否已有自身定位
         init: function (dotnet, lat, lon, hasSelf) {
@@ -51,6 +80,7 @@
                 console.error('[loraMap] maplibre-gl.js 未載入');
                 return;
             }
+            registerOfflineProtocol(); // 註冊 loraoff:// 本機圖磚協定
             if (map) { try { map.remove(); } catch (e) { } map = null; }
             const center = hasSelf ? [lon, lat] : [121.5, 25.05]; // 無定位時預設台北
             try {
@@ -137,6 +167,17 @@
             radarOn = !!on;
             if (dataUrl) { radarImg = dataUrl; }
             if (radarOn) { addRadar(); } else { removeRadar(); }
+        },
+
+        // 取得目前地圖視野範圍與縮放（供「下載目前畫面」用）
+        getView: function () {
+            if (!map) return null;
+            const b = map.getBounds();
+            return {
+                minLon: b.getWest(), minLat: b.getSouth(),
+                maxLon: b.getEast(), maxLat: b.getNorth(),
+                zoom: Math.floor(map.getZoom())
+            };
         },
 
         // 釋放地圖（離開頁面）

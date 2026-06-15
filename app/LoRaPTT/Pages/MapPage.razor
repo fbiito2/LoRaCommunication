@@ -4,7 +4,9 @@
 @using LoRaPTT.Services
 @using Microsoft.JSInterop
 @using Microsoft.Maui.Devices.Sensors
+@using Microsoft.Maui.Storage
 @using System.Net.Http
+@using System.IO
 @inject NodeRegistry Registry
 @inject IMessagingService Messaging
 @inject IJSRuntime JS
@@ -235,7 +237,7 @@
     }
 
     // 雷達圖檔（S3 公開但無 CORS → 由 .NET 原生 HTTP 抓回轉 data URL 給地圖）
-    private static readonly HttpClient _radarHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
     private const string RadarUrl = "https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0058-005.png";
 
     /// <summary>開/關 CWA 氣象雷達疊加層。S3 圖檔無 CORS → 由 .NET 抓回轉 data URL 傳給地圖</summary>
@@ -246,7 +248,7 @@
         {
             try
             {
-                var bytes = await _radarHttp.GetByteArrayAsync(RadarUrl);
+                var bytes = await _http.GetByteArrayAsync(RadarUrl);
                 var dataUrl = "data:image/png;base64," + Convert.ToBase64String(bytes);
                 await JS.InvokeVoidAsync("loraMap.toggleRadar", true, dataUrl);
             }
@@ -259,6 +261,41 @@
         else
         {
             await JS.InvokeVoidAsync("loraMap.toggleRadar", false, (string?)null);
+        }
+    }
+
+    // ── 離線圖磚（衛星 NLSC PHOTO2，F-037 階段二）────────────────
+    // 存於 AppData/offlinetiles/sat/{z}/{x}/{y}.jpg；下載與線上瀏覽都寫入同一庫，覆蓋自然累積。
+    private static string TilePath(int z, int x, int y)
+        => Path.Combine(FileSystem.AppDataDirectory, "offlinetiles", "sat",
+                        z.ToString(), x.ToString(), y + ".jpg");
+
+    /// <summary>
+    /// 供地圖本機協定取衛星圖磚：本機有→回本機(離線可用)；無且有網路→抓 NLSC 並快取；都無→null(空白)。
+    /// </summary>
+    /// <param name="z">縮放層級</param>
+    /// <param name="x">圖磚 X</param>
+    /// <param name="y">圖磚 Y</param>
+    /// <returns>JPEG 圖磚的 base64；取不到回 null</returns>
+    [JSInvokable]
+    public async Task<string?> GetOfflineTile(int z, int x, int y)
+    {
+        var path = TilePath(z, x, y);
+        try
+        {
+            if (File.Exists(path))
+                return Convert.ToBase64String(await File.ReadAllBytesAsync(path));
+
+            // 線上補抓 NLSC（WMTS 順序為 {z}/{y}/{x}）並快取到本機
+            var url = $"https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}";
+            var bytes = await _http.GetByteArrayAsync(url);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllBytesAsync(path, bytes);
+            return Convert.ToBase64String(bytes);
+        }
+        catch
+        {
+            return null; // 離線且未下載，或抓取失敗 → 空白圖磚
         }
     }
 

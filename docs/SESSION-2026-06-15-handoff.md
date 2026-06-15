@@ -40,6 +40,17 @@
 - **RxDutyCycle 省電 → 永久不做（拿掉）**：維持全程連續接收。先前 06-08 handoff 一-4／待辦-3、
   CLAUDE.md 電源管理章節提的「日後重啟用 RxDutyCycle（需加長前導碼）」**作廢**，別再列為待辦。
 
+### ✅ 語音 PTT 已實作（2026-06-16，code-complete，待實機驗證）
+- **F-055 Codec2 native lib**：`libcodec2.so`(arm64-v8a) 編出並打包進 APK（見 [CODEC2-BUILD.md](CODEC2-BUILD.md)）。
+- **F-052 LoRa 模式切換（FW 0.8.0）**：`lora_handler.setMode`；PTT_START 於 SF9 廣播、PTT_END 於 SF7 廣播
+  （控制封包永遠走對方當下在聽的頻道）；35s 逾時保險。APP 送 `voice_start/voice_end` CTRL 觸發。
+- **APP 管線**：`MainViewModel` 重做 → 按住=voice_start→等250ms→錄音→Codec2 encode→累積10幀(200ms)
+  廣播 TYPE_VOICE；放開/滿30s→voice_end 切回。收 VOICE→decode→播放（半雙工自己講時不播）。RECORD_AUDIO 已加。
+- **⚠ 實測前置**：① 4 台全燒 **FW 0.8.0**（目前 0.7.5，且當下沒接電腦）② 手機裝新 APK + 准麥克風
+  ③ 兩支手機各連一台 C6L 對講。**雙機語音延遲/可懂度/模式切換可靠度尚未實測。**
+- **可能要調**：voice_start 後的 250ms 切換等待、30s 上限、漏接 PTT_START 時收方留在 SF9 收不到（小部署靠廣播×重覆，未加中繼強化）。
+- **iOS（F-056）**：音訊仍 stub、無 `libcodec2.a`。
+
 ## 四、本 session 踩雷／關鍵技術點（省得回家再踩）
 - **MapLibre GL v4 的 `addProtocol`**：handler 必須 `async`、回傳 `{ data: ArrayBuffer }`（v4 移除了舊 callback 介面；用 callback 會「圖磚永遠載不出」——衛星空白就是這個）
 - **NLSC WMTS 圖磚順序是 `{z}/{y}/{x}`**（不是 x/y）；圖層 衛星=PHOTO2、街道=EMAP（皆 curl 驗證 200）

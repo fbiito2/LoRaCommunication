@@ -17,6 +17,7 @@
     <div class="map-tools">
         <button class="map-btn" @onclick="RecenterSelfAsync" title="回到自己"><span class="oi oi-map-marker"></span></button>
         <button class="map-btn" @onclick="ToggleList" title="節點清單"><span class="oi oi-people"></span></button>
+        <button class="map-btn" @onclick="ToggleBaseAsync" title="@(_satellite ? "切換街道圖" : "切換衛星圖")"><span class="oi oi-layers"></span></button>
     </div>
 
     <!-- 右下角資訊浮卡（半透明，直排）：進來顯示自己；點 marker 顯示該節點 -->
@@ -99,6 +100,7 @@
 @code {
     private DotNetObjectReference<MapPage>? _ref;  // 供 JS 回呼 marker 點選
     private bool _showList;                          // 節點清單 dialog 開關
+    private bool _satellite;                         // 底圖是否為衛星(NLSC)
     private CardInfo? _card;                         // 下方浮卡內容
     private double _selfLat, _selfLon;               // 自身座標（手機 GPS）
     private double? _selfAlt, _selfCourse;           // 自身高度（公尺）與方位（度）
@@ -220,6 +222,13 @@
 
     /// <summary>開/關節點清單 dialog</summary>
     private void ToggleList() => _showList = !_showList;
+
+    /// <summary>切換底圖：街道 ↔ 衛星(NLSC 正射影像)</summary>
+    private async Task ToggleBaseAsync()
+    {
+        _satellite = !_satellite;
+        await JS.InvokeVoidAsync("loraMap.setBaseLayer", _satellite ? "sat" : "street");
+    }
 
     /// <summary>廣播 PING 主動探測</summary>
     private async Task PingAsync()

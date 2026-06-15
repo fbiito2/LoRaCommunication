@@ -6,6 +6,23 @@
     let selfMarker = null;          // 自己的 marker
     const nodeMarkers = {};         // id(hex) -> maplibregl.Marker
 
+    // 底圖樣式：街道(OpenFreeMap 向量) / 衛星(NLSC 正射影像 PHOTO2 raster)
+    const STYLES = {
+        street: 'https://tiles.openfreemap.org/styles/liberty',
+        sat: {
+            version: 8,
+            sources: {
+                nlsc: {
+                    type: 'raster',
+                    tiles: ['https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}'],
+                    tileSize: 256,
+                    attribution: '© 內政部國土測繪中心'
+                }
+            },
+            layers: [{ id: 'nlsc', type: 'raster', source: 'nlsc' }]
+        }
+    };
+
     window.loraMap = {
         // 初始化地圖。dotnet=DotNetObjectReference，lat/lon=初始中心，hasSelf=是否已有自身定位
         init: function (dotnet, lat, lon, hasSelf) {
@@ -19,7 +36,7 @@
             try {
                 map = new maplibregl.Map({
                     container: 'lora-map',
-                    style: 'https://tiles.openfreemap.org/styles/liberty',
+                    style: STYLES.street,
                     center: center,
                     zoom: 14
                 });
@@ -85,6 +102,11 @@
         // 平滑移動到指定座標
         flyTo: function (lat, lon) {
             if (map) { map.flyTo({ center: [lon, lat], zoom: 16 }); }
+        },
+
+        // 切換底圖：'street' 街道 / 'sat' 衛星(NLSC)。Marker 為 DOM 浮層，setStyle 不影響。
+        setBaseLayer: function (type) {
+            if (map) { map.setStyle(STYLES[type] || STYLES.street); }
         },
 
         // 釋放地圖（離開頁面）

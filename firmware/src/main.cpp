@@ -22,7 +22,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.7.0"
+#define FW_VERSION "0.7.1"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -416,6 +416,7 @@ void setup() {
     // Display 裝置與網路資訊（POST 完成後更新為正常頁面資料）
     Display::deviceId   = _cfg.deviceId;
     Display::deviceName = _cfg.deviceName;
+    Display::fwVer      = FW_VERSION;
     Display::wifiSsid   = WiFi.softAPSSID();
     Display::wifiIp     = WiFi.softAPIP().toString();
 

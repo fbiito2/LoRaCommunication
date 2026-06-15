@@ -5,6 +5,7 @@ namespace Display {
 uint16_t deviceId   = 0;
 String   deviceName = "LoRaPTT";
 String   appStatus  = "none";
+String   fwVer      = "";
 float    loraFreq   = 920.0f;
 uint8_t  loraSf     = 7;
 int16_t  lastRssi   = 0;
@@ -51,6 +52,7 @@ void loop() {
         M5.Display.printf("ID:%04X\n", deviceId);
         M5.Display.printf("%.8s\n", deviceName.c_str());
         M5.Display.printf("APP:%s\n", appStatus.c_str());
+        M5.Display.printf("FW:%s\n", fwVer.c_str()); // 韌體版本（64×48 第 4 行，ASCII）
         break;
 
     case Page::NETWORK:

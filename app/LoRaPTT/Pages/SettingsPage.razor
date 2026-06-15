@@ -69,6 +69,13 @@
                @bind="VM.LoraFreqMhz" placeholder="920.0" />
     </div>
 
+    <!-- 定位廣播間隔（F-074）-->
+    <div class="mb-3">
+        <label class="form-label small text-muted">定位廣播間隔（秒，0=關閉；有 GPS fix 時生效）</label>
+        <input class="form-control form-control-sm bg-dark text-white border-secondary"
+               @bind="VM.PosIntervalSec" placeholder="30" />
+    </div>
+
     <!-- 推送按鈕 -->
     <button class="btn btn-primary mb-3" @onclick="Apply"
             disabled="@(!VM.IsConnected || VM.IsBusy)">

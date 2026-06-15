@@ -31,6 +31,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _wifiSsid = "LoRaPTT";
     [ObservableProperty] private string _wifiPassword = "loraptt2026";
     [ObservableProperty] private string _loraFreqMhz = "920.0";
+    [ObservableProperty] private string _posIntervalSec = "30";
 
     /// <summary>供 Blazor 頁面在資料變動時呼叫 StateHasChanged</summary>
     public event Action? StateChanged;
@@ -108,6 +109,10 @@ public partial class SettingsViewModel : ObservableObject
         StatusMessage = "正在推送設定到 C6L...";
         Notify();
 
+        // 定位廣播間隔（秒，0=關）；格式錯誤不阻擋整體推送，退回預設 30
+        if (!int.TryParse(PosIntervalSec, out var posInterval) || posInterval < 0)
+            posInterval = 30;
+
         try
         {
             var json = JsonSerializer.Serialize(new
@@ -117,6 +122,7 @@ public partial class SettingsViewModel : ObservableObject
                 wifi_ssid = WifiSsid?.Trim() ?? "LoRaPTT",
                 wifi_pass = WifiPassword ?? "loraptt2026",
                 lora_freq = freq,
+                pos_interval = posInterval,
             });
             await _comm.SendAsync(Services.Protocol.LinkFrame.WrapCtrl(json));
             StatusMessage = "設定已送出，C6L 下次開機生效";

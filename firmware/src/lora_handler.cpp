@@ -110,6 +110,7 @@ bool LoRaHandler::sendPacket(LoRaPacket& pkt) {
     switch (pkt.type) {
         case PKT_TYPE_SOS:   pkt.hop = MAX_HOP_SOS;   break;
         case PKT_TYPE_VOICE: pkt.hop = MAX_HOP_VOICE;  break;
+        case PKT_TYPE_POS:   pkt.hop = MAX_HOP_POS;    break;
         default:             pkt.hop = MAX_HOP_TEXT;    break;
     }
 

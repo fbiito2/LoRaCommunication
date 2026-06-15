@@ -33,6 +33,7 @@ DeviceConfig configLoad() {
     prefs.getString("wifiSsid",  cfg.wifiSsid,   sizeof(cfg.wifiSsid));
     prefs.getString("wifiPass",  cfg.wifiPass,   sizeof(cfg.wifiPass));
     cfg.loraFreq = prefs.getFloat("loraFreq", 920.0f);
+    cfg.posIntervalSec = prefs.getUShort("posInt", 30); // 定位廣播間隔，預設 30 秒
 
     if (strlen(cfg.deviceName) == 0) strncpy(cfg.deviceName, "LoRaPTT",  31);
     if (strlen(cfg.wifiSsid)   == 0) strncpy(cfg.wifiSsid,   "LoRaPTT",  31);
@@ -57,6 +58,7 @@ void configSave(const DeviceConfig& cfg) {
     prefs.putString("wifiSsid", cfg.wifiSsid);
     prefs.putString("wifiPass", cfg.wifiPass);
     prefs.putFloat ("loraFreq", cfg.loraFreq);
+    prefs.putUShort("posInt",   cfg.posIntervalSec);
     prefs.putBytes ("aesKey",   cfg.aesKey,  AES_KEY_LEN);
     prefs.putBytes ("hmacKey",  cfg.hmacKey, HMAC_KEY_LEN);
     prefs.end();

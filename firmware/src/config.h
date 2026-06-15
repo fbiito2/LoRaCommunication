@@ -9,6 +9,7 @@ struct DeviceConfig {
     char     wifiSsid[32];            // WiFi AP SSID
     char     wifiPass[32];            // WiFi AP 密碼
     float    loraFreq;                // LoRa 頻率（MHz）
+    uint16_t posIntervalSec;          // 定位定時廣播間隔（秒，0=關閉）
     uint8_t  aesKey[AES_KEY_LEN];     // AES-128 金鑰
     uint8_t  hmacKey[HMAC_KEY_LEN];   // HMAC-SHA256 金鑰
 };

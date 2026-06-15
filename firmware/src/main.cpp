@@ -22,7 +22,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.7.2"
+#define FW_VERSION "0.7.3"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -136,6 +136,27 @@ static void replyPing(const LoRaPacket& pingPkt) {
     Serial.printf("[PING] 回覆給 0x%04X\n", pingPkt.srcId);
 }
 
+// ── 定位定時廣播：有 GPS fix 時定時廣播自身座標（HOP=1，限制洪泛）──
+static uint16_t _posSeq = 0xD000; // 定位專用 SEQ 區段，避免與其他來源碰撞
+static void sendPosition() {
+    LoRaPacket pkt = {};
+    pkt.dstId = DST_BROADCAST;
+    pkt.type  = PKT_TYPE_POS;
+    pkt.seq   = _posSeq++;
+    // Payload：[DeviceID 2B][Lat 8B][Lon 8B]（格式同 SOS GPS，lat@2/lon@10
+    // 小端 double，對齊 APP BitConverter.ToDouble）
+    pkt.payload[0] = (_cfg.deviceId >> 8) & 0xFF;
+    pkt.payload[1] = _cfg.deviceId & 0xFF;
+    double la = Gps::lat(), lo = Gps::lon();
+    memcpy(&pkt.payload[2],  &la, 8);
+    memcpy(&pkt.payload[10], &lo, 8);
+    pkt.payloadLen = 18;
+    loraHandler.sendPacket(pkt);
+    Display::txCount++;
+    Ota::setTxStats(Display::txCount, true);
+    if (!g_usbDataMode) Serial.printf("[POS] 廣播座標 %.6f,%.6f\n", la, lo);
+}
+
 // ── 收到 LoRa 封包（給自己/廣播/群組，已解密）→ 推給手機 ────
 static void onLoRaReceived(const LoRaPacket& pkt, int16_t rssi) {
     PowerMgr::onActivity();
@@ -211,6 +232,8 @@ static void handleCtrl(int idx, const char* json, size_t len) {
             strncpy(_cfg.deviceName, doc["device_name"], 31);
         if (doc["lora_freq"].is<float>())
             _cfg.loraFreq = doc["lora_freq"];
+        if (doc["pos_interval"].is<int>())
+            _cfg.posIntervalSec = (uint16_t)doc["pos_interval"].as<int>(); // 定位間隔(秒,0=關)
         configSave(_cfg);
         const char* resp = "{\"status\":\"ok\"}";
         sendCtrl(idx, resp, strlen(resp));
@@ -559,6 +582,14 @@ void loop() {
         Ota::setTxStats(Display::txCount, ok);
     }
 #endif
+
+    // ── 定位定時廣播：有 GPS fix 時，每 posIntervalSec 秒廣播自身座標 ──
+    static uint32_t _posMs = 0;
+    if (_loraOk && _cfg.posIntervalSec > 0 && Gps::hasFix()
+        && millis() - _posMs >= (uint32_t)_cfg.posIntervalSec * 1000) {
+        _posMs = millis();
+        sendPosition();
+    }
 
     // ── 心跳輸出（每 2 秒）：實機監看用，原生 USB 重置後仍能持續觀察 ──
     static uint32_t _hbMs = 0;

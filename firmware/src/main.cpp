@@ -23,7 +23,7 @@
 volatile bool g_usbDataMode = false;
 
 // ── 韌體版本（F-064 版本查詢）──────────────────────────────
-#define FW_VERSION "0.8.0"
+#define FW_VERSION "0.8.1"
 
 // ── LoRa 啟用旗標 ─────────────────────────────────────────
 // 暫時關閉：SX1262 初始化（radio.begin）在 Unit C6L 上會卡死主迴圈，
@@ -177,12 +177,14 @@ static void enterVoiceMode() {
     _voiceModeUntil = millis() + VOICE_MODE_TIMEOUT_MS;
     if (_voiceMode) return;
     loraHandler.setMode(LORA_BW_VOICE, LORA_SF_VOICE);
+    Display::loraSf = LORA_SF_VOICE; // OLED 即時反映語音模式（SF7）
     _voiceMode = true;
     PowerMgr::onActivity();
 }
 static void exitVoiceMode() {
     if (!_voiceMode) return;
     loraHandler.setMode(LORA_BW, LORA_SF);
+    Display::loraSf = LORA_SF; // OLED 切回長距（SF9）
     _voiceMode = false;
 }
 // 廣播 PTT 控制封包（在「對方當下在聽的頻道」上發：START 於 SF9、END 於 SF7）
@@ -387,6 +389,7 @@ static void runPost() {
             Ota::setLoraStatus(false, -1000);
             _loraOk = loraHandler.begin(_cfg.deviceId);
             Ota::setLoraStatus(_loraOk, loraHandler.lastError());
+            if (_loraOk) Display::loraSf = LORA_SF; // OLED 顯示實際 SF（預設長距 SF9，非寫死的 7）
 
             if (!_loraOk) {
                 Serial.printf("[POST] FAIL: LoRa err=%d\n", loraHandler.lastError());

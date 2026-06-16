@@ -49,6 +49,15 @@ public partial class MainViewModel : ObservableObject
 
         _messaging.VoiceReceived  += OnVoiceReceived;
         _comm.OnConnectionChanged += OnConnectionChanged;
+
+        // 連線是共用的單例：本 VM 是 transient（每次進 PTT 頁都新建），會錯過先前在文字頁
+        // 連上的事件 → 直接讀目前狀態，避免「文字頁已連、語音頁卻要再連一次」。
+        IsConnected = _comm.IsConnected;
+        if (IsConnected)
+        {
+            ModeLabel     = _comm.Mode == CommMode.WiFi ? "WiFi 模式" : "USB 模式";
+            StatusMessage = $"已連線（{ModeLabel}）";
+        }
     }
 
     // ── 連線 ───────────────────────────────────────────────

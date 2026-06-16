@@ -56,8 +56,9 @@ public interface IMessagingService
     Task SendSosAsync(double gpsLat = 0, double gpsLon = 0,
         string? extraText = null, CancellationToken ct = default);
 
-    /// <summary>送出語音幀（F-052）。廣播 TYPE_VOICE，無 ACK、不重送（串流容忍丟包）。</summary>
-    Task SendVoiceAsync(byte[] codec2Frames, CancellationToken ct = default);
+    /// <summary>送出語音幀（F-052）。TYPE_VOICE，無 ACK、不重送（串流容忍丟包）。
+    /// dstId 可為廣播或指定對象（點對點僅該對象的 C6L 會轉給 APP）。</summary>
+    Task SendVoiceAsync(byte[] codec2Frames, ushort dstId, CancellationToken ct = default);
 
     /// <summary>通知 C6L 進入/結束語音模式（F-052），觸發全網 LoRa SF7/BW500 切換。</summary>
     Task SendVoiceModeAsync(bool start, CancellationToken ct = default);

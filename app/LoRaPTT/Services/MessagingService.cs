@@ -376,12 +376,12 @@ public sealed class MessagingService : IMessagingService
     }
 
     // ── 語音 PTT（F-052）────────────────────────────────────
-    public async Task SendVoiceAsync(byte[] codec2Frames, CancellationToken ct = default)
+    public async Task SendVoiceAsync(byte[] codec2Frames, ushort dstId, CancellationToken ct = default)
     {
-        // 廣播語音幀；不重送（語音串流容忍丟包，重送只會塞爆半雙工頻道）。
+        // 語音幀；不重送（語音串流容忍丟包，重送只會塞爆半雙工頻道）。
         var pkt = new LoRaPacket
         {
-            DstId = DstId.Broadcast,
+            DstId = dstId,
             Seq = NextSeq(),
             Type = PacketType.Voice,
             Payload = codec2Frames,

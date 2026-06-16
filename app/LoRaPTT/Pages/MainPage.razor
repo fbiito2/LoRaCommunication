@@ -1,5 +1,6 @@
 @page "/ptt"
 @using LoRaPTT.ViewModels
+@using LoRaPTT.Models
 @inject MainViewModel VM
 
 <div class="container-fluid d-flex flex-column align-items-center justify-content-center vh-100 bg-dark text-white">
@@ -14,6 +15,38 @@
             <span class="badge bg-info ms-2">@VM.ModeLabel</span>
         }
         <p class="mt-2 text-muted small">@VM.StatusMessage</p>
+    </div>
+
+    <!-- 發送對象（與文字頁共用同一選擇）-->
+    <div class="mb-4 d-flex align-items-center gap-2 flex-wrap justify-content-center">
+        <span class="small text-muted">說給</span>
+        <span class="badge @(VM.IsBroadcastTarget ? "bg-warning text-dark" : "bg-info") px-3 py-2"
+              style="font-size:0.9rem">
+            @(VM.IsBroadcastTarget ? "📡 " : "👤 ")@VM.TargetDisplayName
+        </span>
+        <select class="form-select form-select-sm bg-dark text-white border-secondary"
+                style="width:auto; max-width:12rem" @onchange="OnPickTarget">
+            <option value="FFFF" selected="@VM.IsBroadcastTarget">📡 廣播（所有人）</option>
+            @if (VM.Contacts.Count > 0)
+            {
+                <optgroup label="聯絡人">
+                    @foreach (var c in VM.Contacts)
+                    {
+                        <option value="@c.IdHex" selected="@(VM.TargetHex == c.IdHex)">@c.DisplayName (@c.IdHex)</option>
+                    }
+                </optgroup>
+            }
+            @{ var joined = VM.Groups.Where(g => g.Joined).ToList(); }
+            @if (joined.Count > 0)
+            {
+                <optgroup label="群組">
+                    @foreach (var g in joined)
+                    {
+                        <option value="@g.IdHex" selected="@(VM.TargetHex == g.IdHex)">@g.DisplayName (@g.IdHex)</option>
+                    }
+                </optgroup>
+            }
+        </select>
     </div>
 
     <!-- PTT 大圓按鈕 -->
@@ -81,4 +114,11 @@
 @code {
     private async Task OnPttDown() => await VM.PttPressCommand.ExecuteAsync(null);
     private async Task OnPttUp()   => await VM.PttReleaseCommand.ExecuteAsync(null);
+
+    // 選對象：空值視為廣播（與文字頁共用 VM.TargetHex）
+    private void OnPickTarget(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        VM.TargetHex = string.IsNullOrEmpty(v) ? "FFFF" : v;
+    }
 }

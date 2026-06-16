@@ -1,7 +1,12 @@
+using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LoRaPTT.Models;
 using LoRaPTT.Services;
+using LoRaPTT.Services.Protocol;
 using Microsoft.Extensions.Logging;
+using Contact = LoRaPTT.Models.Contact;
 
 namespace LoRaPTT.ViewModels;
 
@@ -16,6 +21,7 @@ public partial class MainViewModel : ObservableObject
 
     private readonly ICommService        _comm;
     private readonly IMessagingService   _messaging;
+    private readonly ChatViewModel       _chat;   // 共用文字頁的對象選擇/聯絡人（單例）
     private readonly IAudioRecordService _record;
     private readonly IAudioPlayService   _play;
     private readonly Codec2Service        _codec2;
@@ -30,9 +36,17 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _statusMessage = "未連線";
     [ObservableProperty] private string _modeLabel     = "";
 
+    // ── 發送對象（與文字頁共用同一份；選一次兩頁一致）──────────
+    public string TargetHex { get => _chat.TargetHex; set => _chat.TargetHex = value; }
+    public string TargetDisplayName => _chat.TargetDisplayName;
+    public bool   IsBroadcastTarget => _chat.IsBroadcastTarget;
+    public ObservableCollection<Contact> Contacts => _chat.Contacts;
+    public ObservableCollection<DeviceGroup> Groups => _chat.Groups;
+
     public MainViewModel(
         ICommService comm,
         IMessagingService messaging,
+        ChatViewModel chat,
         IAudioRecordService record,
         IAudioPlayService play,
         Codec2Service codec2,
@@ -40,6 +54,7 @@ public partial class MainViewModel : ObservableObject
     {
         _comm      = comm;
         _messaging = messaging;
+        _chat      = chat;
         _record    = record;
         _play      = play;
         _codec2    = codec2;
@@ -82,6 +97,7 @@ public partial class MainViewModel : ObservableObject
         if (!_codec2.IsAvailable) { StatusMessage = "語音不可用（Codec2 未載入）"; return; }
 
         IsPttActive   = true;
+        var dstId     = ParseTarget();   // 廣播或指定對象（與文字頁同一選擇）
         StatusMessage = "傳送中...";
         _pttCts = new CancellationTokenSource();
 
@@ -109,7 +125,7 @@ public partial class MainViewModel : ObservableObject
                 {
                     var frames = packet.ToArray();
                     packet.Clear();
-                    try { await _messaging.SendVoiceAsync(frames, _pttCts.Token); }
+                    try { await _messaging.SendVoiceAsync(frames, dstId, _pttCts.Token); }
                     catch (Exception ex) { _logger.LogError(ex, "送語音封包失敗"); }
                 }
             }, _pttCts.Token);
@@ -155,5 +171,16 @@ public partial class MainViewModel : ObservableObject
     {
         IsConnected   = connected;
         StatusMessage = connected ? $"已連線（{ModeLabel}）" : "已斷線";
+    }
+
+    /// <summary>把目前的對象（TargetHex）解析為 dstId；無效則回廣播。</summary>
+    private ushort ParseTarget()
+    {
+        var t = TargetHex?.Trim().Replace("0x", "", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(t)
+            && ushort.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v)
+            && v != DstId.Reserved)
+            return v;
+        return DstId.Broadcast;
     }
 }

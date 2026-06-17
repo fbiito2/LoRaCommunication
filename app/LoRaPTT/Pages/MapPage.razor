@@ -122,6 +122,7 @@
     .map-dl-fill { height: 100%; background: #0d6efd; transition: width 0.2s; }
     .map-dl-text { font-size: 0.75rem; color: #fff; margin-top: 5px; display: flex; align-items: center; }
     .map-dl-cancel { margin-left: auto; background: none; border: none; color: #fff; font-size: 0.9rem; cursor: pointer; padding: 0 4px; }
+    .lora-marker-label { position: absolute; bottom: 150%; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; font-weight: 600; color: #fff; background: rgba(0,0,0,0.65); padding: 1px 5px; border-radius: 4px; pointer-events: none; line-height: 1.4; }
     .lora-self-dot { width: 18px; height: 18px; border-radius: 50%; background: #00e5ff; border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,229,255,0.8); cursor: pointer; }
     .lora-node-dot { width: 16px; height: 16px; border-radius: 50%; background: #ffc107; border: 2px solid #fff; box-shadow: 0 0 6px rgba(0,0,0,0.6); cursor: pointer; }
 </style>
@@ -236,6 +237,14 @@
             ShowNodeCard(node);
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>JS 回呼：點地圖上「自己」的青點 → 浮卡切回自己</summary>
+    [JSInvokable]
+    public async Task OnSelfMarkerClick()
+    {
+        ShowSelfCard();
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>清單中選節點：關 dialog、浮卡顯示、地圖飛到該點</summary>

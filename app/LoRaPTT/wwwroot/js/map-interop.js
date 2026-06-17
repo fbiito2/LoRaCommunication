@@ -122,6 +122,16 @@
             if (!selfMarker) {
                 const el = document.createElement('div');
                 el.className = 'lora-self-dot';
+                el.style.position = 'relative';
+                const label = document.createElement('span');
+                label.className = 'lora-marker-label';
+                label.textContent = '我';
+                el.appendChild(label);
+                // 點自己 → 卡片顯示自己（原本自己沒掛點選事件，點了沒反應）
+                el.addEventListener('click', function (ev) {
+                    ev.stopPropagation();
+                    if (dotNetRef) { dotNetRef.invokeMethodAsync('OnSelfMarkerClick'); }
+                });
                 selfMarker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
             } else {
                 selfMarker.setLngLat(lngLat);
@@ -135,11 +145,17 @@
             nodes.forEach(function (n) {
                 seen[n.id] = true;
                 let m = nodeMarkers[n.id];
+                const labelText = (n.name && n.name.length) ? n.name : ('0x' + n.id);
                 if (!m) {
                     const el = document.createElement('div');
                     el.className = 'lora-node-dot';
+                    el.style.position = 'relative';
                     if (n.color) { el.style.background = n.color; } // 每台一色（與清單共用）
                     el.title = n.id;
+                    const label = document.createElement('span');
+                    label.className = 'lora-marker-label';
+                    label.textContent = labelText; // 上方標 ID/暱稱，好辨識是誰
+                    el.appendChild(label);
                     el.addEventListener('click', function (ev) {
                         ev.stopPropagation();
                         if (dotNetRef) { dotNetRef.invokeMethodAsync('OnNodeMarkerClick', n.id); }
@@ -148,6 +164,8 @@
                     nodeMarkers[n.id] = m;
                 } else {
                     m.setLngLat([n.lon, n.lat]);
+                    const lab = m.getElement().querySelector('.lora-marker-label');
+                    if (lab) { lab.textContent = labelText; } // 暱稱稍後才學到時更新
                 }
             });
             // 移除已不在清單中的 marker

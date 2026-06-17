@@ -82,7 +82,7 @@
                     {
                         <div class="map-node-row" @onclick="() => SelectNode(n)">
                             <span class="node-dot" style="background:@n.Color"></span>
-                            <span class="fw-bold">0x@n.DeviceIdHex</span>
+                            <span class="fw-bold">0x@(n.DeviceIdHex)</span>
                             @if (!string.IsNullOrEmpty(n.Name))
                             {
                                 <span class="text-info ms-1">@n.Name</span>

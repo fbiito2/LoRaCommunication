@@ -39,6 +39,18 @@ public sealed class NodeRegistry
         _messaging.NodeHeard += OnNodeHeard;
         _messaging.PositionReceived += OnPositionReceived;
         _messaging.DeviceDiscovered += OnDeviceDiscovered;
+        // 握手後得知本機 ID → 清掉先前可能誤收的自己（節點清單只列「別人」）
+        _messaging.HandshakeCompleted += OnHandshakeCompleted;
+    }
+
+    /// <summary>是否為本機自己（節點清單/地圖標記不列自己；自己在地圖用手機 GPS 單獨標）</summary>
+    private bool IsSelf(ushort id) =>
+        _messaging.LocalDeviceId.HasValue && id == _messaging.LocalDeviceId.Value;
+
+    private void OnHandshakeCompleted()
+    {
+        if (_messaging.LocalDeviceId is ushort me && _nodes.TryRemove(me, out _))
+            Changed?.Invoke();
     }
 
     /// <summary>
@@ -55,6 +67,7 @@ public sealed class NodeRegistry
     /// <param name="rssi">收訊 RSSI</param>
     private void OnNodeHeard(ushort id, short rssi)
     {
+        if (IsSelf(id)) return;
         var node = _nodes.GetOrAdd(id, key => new NodeInfo { DeviceId = key });
         node.LastSeen = DateTimeOffset.Now;
         node.Rssi = rssi;
@@ -67,6 +80,7 @@ public sealed class NodeRegistry
     /// <param name="lon">經度</param>
     private void OnPositionReceived(ushort id, double lat, double lon)
     {
+        if (IsSelf(id)) return;
         var node = _nodes.GetOrAdd(id, key => new NodeInfo { DeviceId = key });
         node.Lat = lat;
         node.Lon = lon;
@@ -78,6 +92,7 @@ public sealed class NodeRegistry
     /// <param name="contact">探測發現的聯絡人</param>
     private void OnDeviceDiscovered(Contact contact)
     {
+        if (IsSelf(contact.DeviceId)) return;
         var node = _nodes.GetOrAdd(contact.DeviceId, key => new NodeInfo { DeviceId = key });
         if (!string.IsNullOrEmpty(contact.Name))
             node.Name = contact.Name;

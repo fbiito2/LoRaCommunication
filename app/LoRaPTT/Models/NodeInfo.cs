@@ -33,6 +33,15 @@ public sealed class NodeInfo
     /// <summary>
     /// 依 DeviceId 算出的固定顯示顏色（清單圓點與地圖標記共用，同一台永遠同色）。
     /// 用黃金角(137°)散佈色相，讓不同節點顏色分得開；固定飽和/亮度，深底好辨識。
+    /// 避開「自己」青點（#00e5ff ≈ 186°）的色帶，否則該色帶的節點會跟自己撞色。
     /// </summary>
-    public string Color => $"hsl({(DeviceId * 137) % 360}, 70%, 55%)";
+    public string Color
+    {
+        get
+        {
+            int hue = (DeviceId * 137) % 360;
+            if (hue >= 166 && hue <= 206) hue = (hue + 120) % 360; // 落在自己的青色帶 → 旋開
+            return $"hsl({hue}, 70%, 55%)";
+        }
+    }
 }

@@ -39,8 +39,12 @@ public sealed class NodeInfo
     {
         get
         {
-            int hue = (DeviceId * 137) % 360;
-            if (hue >= 166 && hue <= 206) hue = (hue + 120) % 360; // 落在自己的青色帶 → 旋開
+            // 混雜雜湊：放大相近 ID 的差異，避免 0xD400/0xD078 這種相鄰 ID 算出近似色相。
+            uint h = (uint)DeviceId;
+            h = (h ^ (h >> 7)) * 2654435761u;
+            // 把色相映到「扣掉自己青色帶後」的 320° 範圍，再整段跳過該帶（非平移，免得擠在一起）
+            int hue = (int)(h % 320);
+            if (hue >= 166) hue += 40; // 跳過自己青點(#00e5ff≈186°)的 [166,206] 色帶
             return $"hsl({hue}, 70%, 55%)";
         }
     }

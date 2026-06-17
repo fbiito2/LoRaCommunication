@@ -138,6 +138,7 @@
                 if (!m) {
                     const el = document.createElement('div');
                     el.className = 'lora-node-dot';
+                    if (n.color) { el.style.background = n.color; } // 每台一色（與清單共用）
                     el.title = n.id;
                     el.addEventListener('click', function (ev) {
                         ev.stopPropagation();

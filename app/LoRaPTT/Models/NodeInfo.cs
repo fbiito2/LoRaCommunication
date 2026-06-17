@@ -29,4 +29,10 @@ public sealed class NodeInfo
 
     /// <summary>Device ID 的 4 位十六進位字串（顯示用）</summary>
     public string DeviceIdHex => DeviceId.ToString("X4");
+
+    /// <summary>
+    /// 依 DeviceId 算出的固定顯示顏色（清單圓點與地圖標記共用，同一台永遠同色）。
+    /// 用黃金角(137°)散佈色相，讓不同節點顏色分得開；固定飽和/亮度，深底好辨識。
+    /// </summary>
+    public string Color => $"hsl({(DeviceId * 137) % 360}, 70%, 55%)";
 }

@@ -81,6 +81,7 @@
                     @foreach (var n in Registry.GetNodes())
                     {
                         <div class="map-node-row" @onclick="() => SelectNode(n)">
+                            <span class="node-dot" style="background:@n.Color"></span>
                             <span class="fw-bold">0x@n.DeviceIdHex</span>
                             @if (!string.IsNullOrEmpty(n.Name))
                             {
@@ -115,6 +116,7 @@
     .map-dialog-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 20; display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; }
     .map-dialog { background: #1a1d22; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 14px; width: 90%; max-width: 420px; max-height: 70vh; overflow: auto; }
     .map-node-row { padding: 8px 6px; border-bottom: 1px solid #2a2d33; cursor: pointer; }
+    .node-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: middle; border: 1px solid rgba(255,255,255,0.5); }
     .map-dl { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 15; background: rgba(15,18,22,0.7); border-radius: 8px; padding: 8px 12px; backdrop-filter: blur(4px); }
     .map-dl-bar { height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden; }
     .map-dl-fill { height: 100%; background: #0d6efd; transition: width 0.2s; }
@@ -218,7 +220,7 @@
     {
         var nodes = Registry.GetNodes()
             .Where(n => n.HasPosition)
-            .Select(n => new { id = n.DeviceIdHex, name = n.Name ?? "", lat = n.Lat, lon = n.Lon })
+            .Select(n => new { id = n.DeviceIdHex, name = n.Name ?? "", lat = n.Lat, lon = n.Lon, color = n.Color })
             .ToArray();
         await JS.InvokeVoidAsync("loraMap.setNodes", new object[] { nodes });
     }

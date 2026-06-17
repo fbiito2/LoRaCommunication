@@ -30,6 +30,7 @@
                     <div class="card-body py-2 px-3">
                         <div class="d-flex justify-content-between align-items-center">
                             <span class="fw-bold">
+                                <span class="node-dot" style="background:@n.Color"></span>
                                 0x@n.DeviceIdHex
                                 @if (!string.IsNullOrEmpty(n.Name))
                                 {
@@ -53,6 +54,11 @@
         }
     </div>
 </div>
+
+<style>
+    /* 每台節點固定一色的小圓點（與地圖標記共用 NodeInfo.Color）*/
+    .node-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: middle; border: 1px solid rgba(255,255,255,0.5); }
+</style>
 
 @code {
     /// <summary>初始化：訂閱 ViewModel 變動事件</summary>

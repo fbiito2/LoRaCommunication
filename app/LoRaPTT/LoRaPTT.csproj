@@ -60,6 +60,10 @@
         <AndroidNativeLibrary Include="libs\codec2\android\arm64-v8a\libcodec2.so">
             <Abi>arm64-v8a</Abi>
         </AndroidNativeLibrary>
+        <!-- x86：給 VS2022 Android 模擬器(x86)測語音用 -->
+        <AndroidNativeLibrary Include="libs\codec2\android\x86\libcodec2.so">
+            <Abi>x86</Abi>
+        </AndroidNativeLibrary>
     </ItemGroup>
 
 </Project>

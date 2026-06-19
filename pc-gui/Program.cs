@@ -37,6 +37,8 @@ public sealed class MainForm : Form
     private UdpClient? _udp;
     private CancellationTokenSource? _cts;
     private System.Threading.Timer? _keepAlive; // 閒置心跳：免得 C6L(5分TTL)/防火牆把連線當過期
+    private System.Threading.Timer? _ackTimer;  // 握手回應逾時：沒收到 hello-ack 就標連線失敗
+    private volatile bool _connected;            // 是否已收到裝置 hello-ack（真正連上）
     private int _seq;
 
     public MainForm()
@@ -59,7 +61,8 @@ public sealed class MainForm : Form
         _target = new TextBox { Text = "FFFF", Location = new Point(325, 11), Width = 70 };
         var tgtHint = new Label { Text = "FFFF=廣播", AutoSize = true, Location = new Point(400, 14), ForeColor = Color.Gray };
 
-        _deviceLbl = new Label { Text = "裝置：未連線", AutoSize = true, Location = new Point(10, 46), ForeColor = Color.Gray };
+        _deviceLbl = new Label { Text = "● 未連線", AutoSize = true, Location = new Point(10, 46), ForeColor = Color.Gray,
+            Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold) };
 
         top.Controls.AddRange(new Control[] { ipLbl, _ip, _connectBtn, tgtLbl, _target, tgtHint, _deviceLbl });
 
@@ -90,7 +93,7 @@ public sealed class MainForm : Form
         Controls.Add(bottom);
         Controls.Add(top);
 
-        FormClosing += (_, _) => { _keepAlive?.Dispose(); _cts?.Cancel(); _udp?.Close(); };
+        FormClosing += (_, _) => { _keepAlive?.Dispose(); _ackTimer?.Dispose(); _cts?.Cancel(); _udp?.Close(); };
     }
 
     private ushort NextSeq() => (ushort)(Interlocked.Increment(ref _seq) & 0xFFFF);
@@ -101,11 +104,21 @@ public sealed class MainForm : Form
         _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}\r\n");
     }
 
+    /// <summary>更新頂部連線狀態欄（任何執行緒可呼叫，會自動切回 UI 執行緒）</summary>
+    private void SetStatus(string text, Color color)
+    {
+        if (_deviceLbl.InvokeRequired) { _deviceLbl.BeginInvoke((Action)(() => SetStatus(text, color))); return; }
+        _deviceLbl.Text = text;
+        _deviceLbl.ForeColor = color;
+    }
+
+    /// <summary>收到裝置 hello-ack → 確定連上</summary>
     private void SetDevice(ushort id, string? fw)
     {
-        if (_deviceLbl.InvokeRequired) { _deviceLbl.BeginInvoke((Action)(() => SetDevice(id, fw))); return; }
-        _deviceLbl.Text = $"裝置：0x{id:X4}（已連線，韌體 {fw ?? "?"}）";
-        _deviceLbl.ForeColor = Color.Green;
+        _connected = true;
+        _ackTimer?.Dispose(); _ackTimer = null; // 取消逾時判定
+        SetStatus($"✅ 已連線　裝置 0x{id:X4}（韌體 {fw ?? "?"}）", Color.Green);
+        AppendLog($"✅ 已連線：裝置 0x{id:X4}，韌體 {fw ?? "?"}");
     }
 
     // ── 連線 ──
@@ -122,9 +135,22 @@ public sealed class MainForm : Form
             var udp = _udp;
             new Thread(() => RecvLoop(udp, ct)) { IsBackground = true }.Start();
 
+            _connected = false;
             udp.Send(new byte[] { 0x00 }, 1); // 註冊封包，讓 C6L 記住本機 IP
             SendLink(LinkFrame.WrapCtrl("{\"cmd\":\"hello\",\"name\":\"PC\"}"));
-            AppendLog($"→ 連線 {_ip.Text}:5000，已送握手 hello");
+            AppendLog($"→ 連線 {_ip.Text}:5000，已送握手 hello，等待裝置回應…");
+            SetStatus("● 連線中…已送握手，等待裝置回應", Color.DarkOrange);
+
+            // 握手回應逾時（5 秒沒收到 hello-ack）→ 標明連線可能失敗，讓使用者知道狀況
+            _ackTimer?.Dispose();
+            _ackTimer = new System.Threading.Timer(_ =>
+            {
+                if (!_connected)
+                {
+                    SetStatus("⚠ 未收到裝置回應　確認 IP 正確、且已連上 C6L 的 WiFi", Color.Red);
+                    AppendLog("⚠ 5 秒內未收到裝置 hello-ack：IP 錯誤、未連上 C6L WiFi、或防火牆擋回程。可再按一次「連線」。");
+                }
+            }, null, 5_000, Timeout.Infinite);
 
             // 每 60 秒送 1 byte 心跳：閒置時也能維持在 C6L client 清單裡，
             // 並讓 Windows 防火牆的 UDP 回程映射保持開啟，免得「一段時間沒動作就收不到、要重按連線」。
@@ -133,7 +159,11 @@ public sealed class MainForm : Form
                 _ => { try { udp.Send(new byte[] { 0x00 }, 1); } catch { /* 已斷線，忽略 */ } },
                 null, 60_000, 60_000);
         }
-        catch (Exception ex) { AppendLog("連線失敗：" + ex.Message); }
+        catch (Exception ex)
+        {
+            SetStatus("⚠ 連線失敗：" + ex.Message, Color.Red);
+            AppendLog("連線失敗：" + ex.Message);
+        }
     }
 
     private void SendLink(byte[] link)

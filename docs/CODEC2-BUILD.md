@@ -39,6 +39,17 @@ cmake --build . --target codec2
 - `llvm-strip libcodec2.so`（2.36MB → 1.43MB）後複製到 `app/LoRaPTT/libs/codec2/android/arm64-v8a/`。
 - 驗證：APK 內出現 `lib/arm64-v8a/libcodec2.so`（解 APK zip 確認）。
 
-## 待補（其他 ABI / iOS）
-- 目前只有 **arm64-v8a**（涵蓋所有現代實機）。如需 x86_64 模擬器或 armeabi-v7a，改 `ANDROID_ABI` 重編再加進 csproj。
-- iOS（F-056）：需 `libcodec2.a`（Xcode/iOS toolchain），尚未做。
+## 其他 ABI
+- 已有 **arm64-v8a**(實機) + **x86**(VS 模擬器,`ANDROID_ABI=x86` 同法編,已進 csproj/APK)。
+  需 x86_64/armeabi-v7a 改 `ANDROID_ABI` 重編再加進 csproj。
+
+## Windows（PC client 語音）— ⚠ 需 MinGW，MSVC 不行
+要讓 pc-gui 也能語音(當第二端點),得編 **codec2.dll(Windows x64)**。實測結論:
+- **MSVC / clang-cl 是死路**:codec2 大量用 **C99 複數**(`complex float`、`cexpf/crealf…`)。
+  VLA(clang-cl 可解)、`M_PI`(`/D_USE_MATH_DEFINES`)、`_complex`(改 `float _Complex`)都能繞，
+  但**複數數學函式 MSVC CRT 根本沒有 → 連結必失敗**。codec2 官方 Windows 就是用 **MinGW**。
+- **正解**:裝 **MinGW-w64**(或 LLVM-MinGW),CMake 用 gcc/clang-GNU 編 → `codec2.dll`，
+  再 pc-gui P/Invoke + NAudio(NuGet)做 8kHz 錄放 + 收發 TYPE_VOICE。**尚未做。**
+
+## iOS（F-056）
+- 需 `libcodec2.a`(Xcode/iOS toolchain,在 Mac 上編),尚未做;另需補 iOS 音訊(AVAudioEngine)。

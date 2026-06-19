@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -41,7 +42,8 @@ public sealed class MainForm : Form
     private System.Threading.Timer? _keepAlive; // 閒置心跳：免得 C6L(5分TTL)/防火牆把連線當過期
     private System.Threading.Timer? _ackTimer;  // 握手回應逾時：沒收到 hello-ack 就標連線失敗
     private volatile bool _connected;            // 是否已收到裝置 hello-ack（真正連上）
-    private readonly Dictionary<ushort, (double lat, double lon)> _lastPos = new(); // 各節點上次定位（去重）
+    private System.Threading.Timer? _gpsTimer;   // 定時抓連線裝置 /version 顯示其 GPS 狀況
+    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(3) };
     private int _seq;
 
     public MainForm()
@@ -100,7 +102,7 @@ public sealed class MainForm : Form
         Controls.Add(bottom);
         Controls.Add(top);
 
-        FormClosing += (_, _) => { _keepAlive?.Dispose(); _ackTimer?.Dispose(); _cts?.Cancel(); _udp?.Close(); };
+        FormClosing += (_, _) => { _keepAlive?.Dispose(); _ackTimer?.Dispose(); _gpsTimer?.Dispose(); _cts?.Cancel(); _udp?.Close(); };
     }
 
     private ushort NextSeq() => (ushort)(Interlocked.Increment(ref _seq) & 0xFFFF);
@@ -111,15 +113,40 @@ public sealed class MainForm : Form
         _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}\r\n");
     }
 
-    /// <summary>就地更新「裝置狀態下方」的定位列（列出各節點最新座標，不洗版）</summary>
-    private void ShowPositions()
+    /// <summary>就地更新「裝置狀態下方」的 GPS 列</summary>
+    private void SetGps(string text, Color color)
     {
-        if (_posLbl.InvokeRequired) { _posLbl.BeginInvoke((Action)ShowPositions); return; }
-        if (_lastPos.Count == 0) { _posLbl.Text = ""; return; }
-        var sb = new StringBuilder();
-        foreach (var kv in _lastPos)
-            sb.AppendLine($"📍 0x{kv.Key:X4}  {kv.Value.lat:F6}, {kv.Value.lon:F6}");
-        _posLbl.Text = sb.ToString().TrimEnd();
+        if (_posLbl.InvokeRequired) { _posLbl.BeginInvoke((Action)(() => SetGps(text, color))); return; }
+        _posLbl.Text = text;
+        _posLbl.ForeColor = color;
+    }
+
+    /// <summary>定時抓「連線裝置」的 /version，顯示它自己的 GPS 狀況（免一直按 C6L 按鈕看 OLED）。
+    /// 自己的定位走 LoRa POS 收不回來（split-horizon），故改用 HTTP 遙測。</summary>
+    private async void PollGps()
+    {
+        var ip = _ip.Text.Trim();
+        try
+        {
+            using var resp = await _http.GetAsync($"http://{ip}/version");
+            if (!resp.IsSuccessStatusCode) return;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var r = doc.RootElement;
+            bool fix   = r.TryGetProperty("gps_fix", out var f) && f.GetBoolean();
+            int  sats  = r.TryGetProperty("gps_sats", out var s) ? s.GetInt32() : 0;
+            double lat = r.TryGetProperty("gps_lat", out var la) ? la.GetDouble() : 0;
+            double lon = r.TryGetProperty("gps_lon", out var lo) ? lo.GetDouble() : 0;
+            long bytes = r.TryGetProperty("gps_bytes", out var b) ? b.GetInt64() : 0;
+            int  baud  = r.TryGetProperty("gps_baud", out var bd) ? bd.GetInt32() : 0;
+            int  rx    = r.TryGetProperty("gps_rx", out var rxp) ? rxp.GetInt32() : 0;
+
+            if (fix)
+                SetGps($"📍 GPS 定位 {lat:F6}, {lon:F6}（衛星 {sats}）", Color.FromArgb(0, 120, 0));
+            else
+                // 無定位時帶診斷：bytes 有在增=模組有送資料(只是沒衛星);bytes 不動/baud 一直跳=模組沒接好
+                SetGps($"GPS 無定位　衛星 {sats}　收 {bytes}B baud {baud} rx{rx}", Color.DarkOrange);
+        }
+        catch { /* 抓不到(未連/逾時) → 不更新，保留上次 */ }
     }
 
     /// <summary>更新頂部連線狀態欄（任何執行緒可呼叫，會自動切回 UI 執行緒）</summary>
@@ -176,6 +203,10 @@ public sealed class MainForm : Form
             _keepAlive = new System.Threading.Timer(
                 _ => { try { udp.Send(new byte[] { 0x00 }, 1); } catch { /* 已斷線，忽略 */ } },
                 null, 60_000, 60_000);
+
+            // 每 4 秒抓連線裝置的 /version → 就地顯示其 GPS（免一直按 C6L 按鈕看 OLED）
+            _gpsTimer?.Dispose();
+            _gpsTimer = new System.Threading.Timer(_ => PollGps(), null, 1_000, 4_000);
         }
         catch (Exception ex)
         {
@@ -249,23 +280,6 @@ public sealed class MainForm : Form
                         }
                         AppendLog($"🆘🆘 SOS 緊急求救！來自 0x{pkt.SrcId:X4}　{loc}{extra}  (RSSI {rssi})");
                         try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* 無音效裝置忽略 */ }
-                        break;
-                    }
-                    case PacketType.Pos:
-                    {
-                        // 定位廣播（F-074，每 30 秒/移動時）。payload：[DeviceID 2B][Lat 8B][Lon 8B]
-                        var p = pkt.Payload;
-                        if (p.Length >= 18)
-                        {
-                            double lat = BitConverter.ToDouble(p, 2);
-                            double lon = BitConverter.ToDouble(p, 10);
-                            // 座標沒變就不重印（靜止節點每 30 秒重發同座標，避免洗版）
-                            if (!_lastPos.TryGetValue(pkt.SrcId, out var prev) || prev.lat != lat || prev.lon != lon)
-                            {
-                                _lastPos[pkt.SrcId] = (lat, lon);
-                                ShowPositions(); // 就地更新狀態下方的定位列（不丟對話框）
-                            }
-                        }
                         break;
                     }
                     case PacketType.Ack:

@@ -33,9 +33,12 @@ public static class MauiProgram
         builder.Services.AddSingleton<IBackgroundKeepAlive, Platforms.Android.BackgroundKeepAliveImpl>();
         // 來訊提示：高重要度通知頻道（聲音 + 震動）
         builder.Services.AddSingleton<INotifier, Platforms.Android.NotifierImpl>();
+        // App 程序控制（完全結束）
+        builder.Services.AddSingleton<IAppControl, Platforms.Android.AppControlImpl>();
 #else
         builder.Services.AddSingleton<IBackgroundKeepAlive, NoOpBackgroundKeepAlive>();
         builder.Services.AddSingleton<INotifier, NoOpNotifier>();
+        builder.Services.AddSingleton<IAppControl, NoOpAppControl>();
 #endif
         builder.Services.AddSingleton<ICommService, CommRouter>();
 

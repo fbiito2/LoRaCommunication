@@ -1,6 +1,8 @@
 @page "/settings"
 @using LoRaPTT.ViewModels
+@using LoRaPTT.Services
 @inject SettingsViewModel VM
+@inject IAppControl AppCtl
 @implements IDisposable
 
 <div class="d-flex flex-column vh-100 bg-dark text-white p-3">
@@ -89,6 +91,16 @@
         <button class="btn btn-sm btn-outline-danger ms-auto" @onclick="ClearOffline">清除</button>
     </div>
 
+    <hr class="border-secondary" />
+    <h6 class="text-warning">App 控制</h6>
+    <div class="mb-2">
+        <button class="btn btn-sm btn-danger" @onclick="ExitApp">完全結束 App</button>
+        <div class="small text-muted mt-1">
+            因背景保活，滑掉 App 不會真的關閉。卡住、要重置或徹底關閉時按這個：停背景服務並關閉行程，
+            重開即為全新狀態（也會重新綁定 WiFi、解開「已連線卻不通」）。
+        </div>
+    </div>
+
     <p class="text-muted small mt-auto">
         裝置 ID 為出廠燒錄，無法在此修改。如需重置所有設定，請在 C6L 長按按鈕 6 秒。
     </p>
@@ -109,6 +121,7 @@
     private void SaveNickname() => VM.SaveNicknameCommand.Execute(null);
     private async Task Apply() => await VM.ApplyToDeviceCommand.ExecuteAsync(null);
     private void ClearOffline() => VM.ClearOfflineMapsCommand.Execute(null);
+    private void ExitApp() => AppCtl.ExitApp();
 
     public void Dispose()
     {

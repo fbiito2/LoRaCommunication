@@ -18,6 +18,10 @@
         {
             <button class="btn btn-sm btn-outline-light" @onclick="Connect">連接</button>
         }
+        else
+        {
+            <button class="btn btn-sm btn-outline-warning" @onclick="Disconnect">中斷</button>
+        }
     </div>
 
     <!-- 發送目標列（清楚顯示「現在訊息會送給誰」）-->
@@ -360,7 +364,8 @@
         }
     }
 
-    private async Task Connect() => await VM.ConnectCommand.ExecuteAsync(null);
+    private async Task Connect()    => await VM.ConnectCommand.ExecuteAsync(null);
+    private async Task Disconnect() => await VM.DisconnectCommand.ExecuteAsync(null);
     private async Task Send()    => await VM.SendCommand.ExecuteAsync(null);
     private async Task Ping()    => await VM.PingCommand.ExecuteAsync(null);
     private void AddContact()    => VM.AddContactCommand.Execute(null);

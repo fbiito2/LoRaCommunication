@@ -142,6 +142,17 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
+    // ── 中斷連線（讓使用者能斷線重連，解開「已連線卻不通」的卡死狀態）──
+    [RelayCommand]
+    private async Task DisconnectAsync()
+    {
+        try { await _comm.DisconnectAsync(); }
+        catch (Exception ex) { _logger.LogError(ex, "中斷連線失敗"); }
+        IsConnected = false;
+        StatusMessage = "已中斷，可重新連線";
+        Notify();
+    }
+
     // ── 送出文字 ────────────────────────────────────────────
     [RelayCommand]
     private async Task SendAsync()

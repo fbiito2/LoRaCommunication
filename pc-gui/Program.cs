@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -39,6 +40,7 @@ public sealed class MainForm : Form
     private System.Threading.Timer? _keepAlive; // 閒置心跳：免得 C6L(5分TTL)/防火牆把連線當過期
     private System.Threading.Timer? _ackTimer;  // 握手回應逾時：沒收到 hello-ack 就標連線失敗
     private volatile bool _connected;            // 是否已收到裝置 hello-ack（真正連上）
+    private readonly Dictionary<ushort, (double lat, double lon)> _lastPos = new(); // 各節點上次定位（去重）
     private int _seq;
 
     public MainForm()
@@ -231,6 +233,23 @@ public sealed class MainForm : Form
                         }
                         AppendLog($"🆘🆘 SOS 緊急求救！來自 0x{pkt.SrcId:X4}　{loc}{extra}  (RSSI {rssi})");
                         try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* 無音效裝置忽略 */ }
+                        break;
+                    }
+                    case PacketType.Pos:
+                    {
+                        // 定位廣播（F-074，每 30 秒/移動時）。payload：[DeviceID 2B][Lat 8B][Lon 8B]
+                        var p = pkt.Payload;
+                        if (p.Length >= 18)
+                        {
+                            double lat = BitConverter.ToDouble(p, 2);
+                            double lon = BitConverter.ToDouble(p, 10);
+                            // 座標沒變就不重印（靜止節點每 30 秒重發同座標，避免洗版）
+                            if (!_lastPos.TryGetValue(pkt.SrcId, out var prev) || prev.lat != lat || prev.lon != lon)
+                            {
+                                _lastPos[pkt.SrcId] = (lat, lon);
+                                AppendLog($"📍 0x{pkt.SrcId:X4} 定位 {lat:F6}, {lon:F6}  (RSSI {rssi})");
+                            }
+                        }
                         break;
                     }
                     case PacketType.Ack:

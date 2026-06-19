@@ -216,8 +216,23 @@ public sealed class MainForm : Form
                             }
                         break;
                     case PacketType.Sos:
-                        AppendLog($"🆘 0x{pkt.SrcId:X4} SOS 求救  (RSSI {rssi})");
+                    {
+                        // payload：[DeviceID 2B][Lat 8B double][Lon 8B double][附加文字 NB]
+                        // C6L 實體按鈕求救僅 2B(無 GPS)；有定位則 18B+。格式同 App SendSosAsync。
+                        var p = pkt.Payload;
+                        string loc = "無定位";
+                        string extra = "";
+                        if (p.Length >= 18)
+                        {
+                            double lat = BitConverter.ToDouble(p, 2);
+                            double lon = BitConverter.ToDouble(p, 10);
+                            if (lat != 0 || lon != 0) loc = $"📍 {lat:F6}, {lon:F6}";
+                            if (p.Length > 18) extra = "　💬 " + Encoding.UTF8.GetString(p, 18, p.Length - 18);
+                        }
+                        AppendLog($"🆘🆘 SOS 緊急求救！來自 0x{pkt.SrcId:X4}　{loc}{extra}  (RSSI {rssi})");
+                        try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* 無音效裝置忽略 */ }
                         break;
+                    }
                     case PacketType.Ack:
                         // 對方已收到我的點對點訊息
                         break;

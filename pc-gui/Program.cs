@@ -30,6 +30,7 @@ public sealed class MainForm : Form
     private readonly TextBox _ip;
     private readonly Button _connectBtn;
     private readonly Label _deviceLbl;
+    private readonly Label _posLbl;   // 裝置狀態下方就地顯示各節點定位（不洗版）
     private readonly TextBox _target;
     private readonly TextBox _log;
     private readonly TextBox _input;
@@ -52,7 +53,7 @@ public sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
 
         // ── 頂部：IP / 連線 / 裝置 ID / 目標 ──
-        var top = new Panel { Dock = DockStyle.Top, Height = 76 };
+        var top = new Panel { Dock = DockStyle.Top, Height = 118 };
 
         var ipLbl = new Label { Text = "裝置 IP", AutoSize = true, Location = new Point(10, 14) };
         _ip = new TextBox { Text = "192.168.4.1", Location = new Point(70, 11), Width = 110 };
@@ -66,7 +67,11 @@ public sealed class MainForm : Form
         _deviceLbl = new Label { Text = "● 未連線", AutoSize = true, Location = new Point(10, 46), ForeColor = Color.Gray,
             Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold) };
 
-        top.Controls.AddRange(new Control[] { ipLbl, _ip, _connectBtn, tgtLbl, _target, tgtHint, _deviceLbl });
+        // 定位列：在裝置狀態下方就地顯示各節點座標（更新而非洗版）
+        _posLbl = new Label { Text = "", AutoSize = true, Location = new Point(10, 68), ForeColor = Color.FromArgb(0, 120, 0),
+            Font = new Font("Microsoft JhengHei UI", 9F) };
+
+        top.Controls.AddRange(new Control[] { ipLbl, _ip, _connectBtn, tgtLbl, _target, tgtHint, _deviceLbl, _posLbl });
 
         // ── 對話記錄 ──
         _log = new TextBox
@@ -104,6 +109,17 @@ public sealed class MainForm : Form
     {
         if (_log.InvokeRequired) { _log.BeginInvoke((Action)(() => AppendLog(line))); return; }
         _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}\r\n");
+    }
+
+    /// <summary>就地更新「裝置狀態下方」的定位列（列出各節點最新座標，不洗版）</summary>
+    private void ShowPositions()
+    {
+        if (_posLbl.InvokeRequired) { _posLbl.BeginInvoke((Action)ShowPositions); return; }
+        if (_lastPos.Count == 0) { _posLbl.Text = ""; return; }
+        var sb = new StringBuilder();
+        foreach (var kv in _lastPos)
+            sb.AppendLine($"📍 0x{kv.Key:X4}  {kv.Value.lat:F6}, {kv.Value.lon:F6}");
+        _posLbl.Text = sb.ToString().TrimEnd();
     }
 
     /// <summary>更新頂部連線狀態欄（任何執行緒可呼叫，會自動切回 UI 執行緒）</summary>
@@ -247,7 +263,7 @@ public sealed class MainForm : Form
                             if (!_lastPos.TryGetValue(pkt.SrcId, out var prev) || prev.lat != lat || prev.lon != lon)
                             {
                                 _lastPos[pkt.SrcId] = (lat, lon);
-                                AppendLog($"📍 0x{pkt.SrcId:X4} 定位 {lat:F6}, {lon:F6}  (RSSI {rssi})");
+                                ShowPositions(); // 就地更新狀態下方的定位列（不丟對話框）
                             }
                         }
                         break;

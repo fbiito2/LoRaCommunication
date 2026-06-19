@@ -42,8 +42,10 @@ public sealed class MainForm : Form
     private System.Threading.Timer? _keepAlive; // 閒置心跳：免得 C6L(5分TTL)/防火牆把連線當過期
     private System.Threading.Timer? _ackTimer;  // 握手回應逾時：沒收到 hello-ack 就標連線失敗
     private volatile bool _connected;            // 是否已收到裝置 hello-ack（真正連上）
-    private System.Threading.Timer? _gpsTimer;   // 定時抓連線裝置 /version 顯示其 GPS 狀況
+    private System.Threading.Timer? _gpsTimer;   // 定時抓「直連那台」的 /version 顯示其 GPS
     private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(3) };
+    private string _localGps = "";               // 直連裝置(如 D078)自己的 GPS 文字
+    private readonly Dictionary<ushort, (double lat, double lon)> _remotePos = new(); // 遠方節點經 LoRa POS 回報的座標
     private int _seq;
 
     public MainForm()
@@ -113,12 +115,15 @@ public sealed class MainForm : Form
         _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}\r\n");
     }
 
-    /// <summary>就地更新「裝置狀態下方」的 GPS 列</summary>
-    private void SetGps(string text, Color color)
+    /// <summary>就地重繪定位列：第一行=直連裝置自己的 GPS；其餘=遠方節點經 LoRa 回報的座標。</summary>
+    private void RefreshPosLabel()
     {
-        if (_posLbl.InvokeRequired) { _posLbl.BeginInvoke((Action)(() => SetGps(text, color))); return; }
-        _posLbl.Text = text;
-        _posLbl.ForeColor = color;
+        if (_posLbl.InvokeRequired) { _posLbl.BeginInvoke((Action)RefreshPosLabel); return; }
+        var sb = new StringBuilder();
+        if (_localGps.Length > 0) sb.AppendLine(_localGps);
+        foreach (var kv in _remotePos)
+            sb.AppendLine($"📍 0x{kv.Key:X4}  {kv.Value.lat:F6}, {kv.Value.lon:F6}");
+        _posLbl.Text = sb.ToString().TrimEnd();
     }
 
     /// <summary>定時抓「連線裝置」的 /version，顯示它自己的 GPS 狀況（免一直按 C6L 按鈕看 OLED）。
@@ -140,11 +145,11 @@ public sealed class MainForm : Form
             int  baud  = r.TryGetProperty("gps_baud", out var bd) ? bd.GetInt32() : 0;
             int  rx    = r.TryGetProperty("gps_rx", out var rxp) ? rxp.GetInt32() : 0;
 
-            if (fix)
-                SetGps($"📍 GPS 定位 {lat:F6}, {lon:F6}（衛星 {sats}）", Color.FromArgb(0, 120, 0));
-            else
-                // 無定位時帶診斷：bytes 有在增=模組有送資料(只是沒衛星);bytes 不動/baud 一直跳=模組沒接好
-                SetGps($"GPS 無定位　衛星 {sats}　收 {bytes}B baud {baud} rx{rx}", Color.DarkOrange);
+            // 直連那台(如 D078)自己的 GPS。無定位時帶診斷(bytes 有增=模組有送;baud 跳=沒鎖定)
+            _localGps = fix
+                ? $"本機 GPS 定位 {lat:F6}, {lon:F6}（衛星 {sats}）"
+                : $"本機 GPS 無定位　衛星 {sats}　收 {bytes}B baud {baud} rx{rx}";
+            RefreshPosLabel();
         }
         catch { /* 抓不到(未連/逾時) → 不更新，保留上次 */ }
     }
@@ -280,6 +285,23 @@ public sealed class MainForm : Form
                         }
                         AppendLog($"🆘🆘 SOS 緊急求救！來自 0x{pkt.SrcId:X4}　{loc}{extra}  (RSSI {rssi})");
                         try { System.Media.SystemSounds.Exclamation.Play(); } catch { /* 無音效裝置忽略 */ }
+                        break;
+                    }
+                    case PacketType.Pos:
+                    {
+                        // 遠方節點經 LoRa 廣播自己的定位(F-074)。payload：[ID 2][Lat 8][Lon 8]
+                        // 這是從 PC 看「不在電腦旁的節點(如外頭的 D400)」GPS 的正解。
+                        var p = pkt.Payload;
+                        if (p.Length >= 18)
+                        {
+                            double lat = BitConverter.ToDouble(p, 2);
+                            double lon = BitConverter.ToDouble(p, 10);
+                            if (!_remotePos.TryGetValue(pkt.SrcId, out var prev) || prev.lat != lat || prev.lon != lon)
+                            {
+                                _remotePos[pkt.SrcId] = (lat, lon);
+                                RefreshPosLabel(); // 就地更新定位列(不洗版)
+                            }
+                        }
                         break;
                     }
                     case PacketType.Ack:

@@ -106,7 +106,7 @@
     <!-- 管理面板：聯絡人 / 群組 / 暱稱（F-002/F-003/F-020~022）-->
     @if (VM.ShowManage)
     {
-        <div class="p-2 border-bottom border-secondary small" style="max-height:40vh; overflow-auto;">
+        <div class="p-2 border-bottom border-secondary small flex-grow-1" style="min-height:0; overflow-auto;">
             <!-- 暱稱 -->
             <div class="d-flex align-items-center gap-2 mb-2">
                 <label class="text-muted mb-0">暱稱</label>
@@ -244,8 +244,11 @@
         </div>
     }
 
+    @if (!VM.ShowManage)
+    {
     <!-- 訊息列表（唯一會捲動的區域；min-height:0 讓它在 flex 直向裡能正確捲動，
-         訊息再多也只在此區捲動，不會把下方輸入框推出畫面）-->
+         訊息再多也只在此區捲動，不會把下方輸入框推出畫面）。
+         開管理面板時隱藏，讓面板獨佔中間空間、不與下方輸入列重疊 -->
     <div class="flex-grow-1 overflow-auto p-2" id="msg-list" style="min-height:0">
         @if (VM.Messages.Count == 0)
         {
@@ -295,8 +298,11 @@
             </div>
         }
     </div>
+    }
 
-    <!-- 輸入列 -->
+    <!-- 輸入列（開管理面板時隱藏，避免鍵盤彈出時與面板內容重疊）-->
+    @if (!VM.ShowManage)
+    {
     <div class="p-2 border-top border-secondary">
         <!-- 目標提示 -->
         <div class="d-flex align-items-center gap-1 mb-1">
@@ -321,6 +327,7 @@
             </button>
         </div>
     </div>
+    }
 </div>
 
 <style>

@@ -170,6 +170,13 @@
                        style="width:10rem" placeholder="群組名稱" @bind="VM.NewGroupName" />
                 <button class="btn btn-sm btn-outline-success" @onclick="CreateGroup">建立</button>
             </div>
+            <!-- 用 ID 加入別人建的群組（多人要同一個 ID 才在同一群）-->
+            <div class="d-flex gap-2 mb-1 align-items-center">
+                <input class="form-control form-control-sm bg-dark text-white border-secondary"
+                       style="width:6rem" placeholder="群組ID FFE0" @bind="VM.NewGroupId" />
+                <button class="btn btn-sm btn-outline-info" @onclick="JoinGroupById">用 ID 加入</button>
+                <small class="text-muted">把別人給的群組 ID 加進來</small>
+            </div>
             @foreach (var g in VM.Groups)
             {
                 <div class="d-flex align-items-center gap-2 mb-1">
@@ -370,6 +377,7 @@
     private async Task Ping()    => await VM.PingCommand.ExecuteAsync(null);
     private void AddContact()    => VM.AddContactCommand.Execute(null);
     private void CreateGroup()   => VM.CreateGroupCommand.Execute(null);
+    private void JoinGroupById() => VM.JoinGroupByIdCommand.Execute(null);
     private void AddDiscovered(Contact c) => VM.AddDiscoveredCommand.Execute(c);
     private void CloseDiscovery()         => VM.CloseDiscoveryDialogCommand.Execute(null);
 

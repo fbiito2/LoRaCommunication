@@ -33,6 +33,7 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string _newContactId = "";
     [ObservableProperty] private string _newContactName = "";
     [ObservableProperty] private string _newGroupName = "";
+    [ObservableProperty] private string _newGroupId = "";      // 用 ID 加入別人建的群組
     [ObservableProperty] private bool _isScanning;             // F-004：正在掃描附近裝置
     [ObservableProperty] private int _scanCountdown;           // 掃描倒數秒
     [ObservableProperty] private bool _showDiscoveryDialog;    // 探測結果對話框開合
@@ -427,6 +428,32 @@ public partial class ChatViewModel : ObservableObject
         }
         Groups.Add(new DeviceGroup { Index = idx, Name = NewGroupName?.Trim() ?? "", Joined = true });
         _store.SaveGroups(Groups);
+        NewGroupName = "";
+        Notify();
+    }
+
+    /// <summary>用群組 ID（FFE0~FFEF）加入別人建的群組：相同 ID 才會在同一群（名稱僅本機）。</summary>
+    [RelayCommand]
+    private void JoinGroupById()
+    {
+        var t = NewGroupId?.Trim().Replace("0x", "", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(t)
+            || !ushort.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var id)
+            || !DstId.IsGroup(id))
+        {
+            StatusMessage = $"群組 ID 須為 {DstId.GroupMin:X4}~{DstId.GroupMax:X4}";
+            Notify();
+            return;
+        }
+        int idx = DstId.ToGroupIndex(id);
+        var existing = Groups.FirstOrDefault(g => g.Index == idx);
+        if (existing is null)
+            Groups.Add(new DeviceGroup { Index = idx, Name = NewGroupName?.Trim() ?? "", Joined = true });
+        else
+            existing.Joined = true; // 已在清單 → 標記為已加入
+        _store.SaveGroups(Groups);
+        StatusMessage = $"已加入群組 0x{id:X4}";
+        NewGroupId = "";
         NewGroupName = "";
         Notify();
     }

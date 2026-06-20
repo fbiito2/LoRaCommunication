@@ -171,11 +171,11 @@
                 <button class="btn btn-sm btn-outline-success" @onclick="CreateGroup">建立</button>
             </div>
             <!-- 用 ID 加入別人建的群組（多人要同一個 ID 才在同一群）-->
-            <div class="d-flex gap-2 mb-1 align-items-center">
+            <div class="small text-muted mt-1">用 ID 加入別人的群（輸入 FFE0~FFEF）</div>
+            <div class="d-flex gap-2 mb-1 align-items-center flex-wrap">
                 <input class="form-control form-control-sm bg-dark text-white border-secondary"
-                       style="width:6rem" placeholder="群組ID FFE0" @bind="VM.NewGroupId" />
-                <button class="btn btn-sm btn-outline-info" @onclick="JoinGroupById">用 ID 加入</button>
-                <small class="text-muted">把別人給的群組 ID 加進來</small>
+                       style="width:7rem" placeholder="群組ID FFE0" @bind="VM.NewGroupId" />
+                <button class="btn btn-sm btn-outline-info" @onclick="JoinGroupById">加入</button>
             </div>
             @foreach (var g in VM.Groups)
             {
@@ -188,6 +188,10 @@
                     <button class="btn btn-sm btn-outline-primary py-0"
                             @onclick="() => VM.SelectTargetCommand.Execute(g.IdHex)">
                         選為目標
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger py-0"
+                            @onclick="() => VM.RemoveGroupCommand.Execute(g)" title="退群（從清單移除）">
+                        ✕
                     </button>
                 </div>
             }

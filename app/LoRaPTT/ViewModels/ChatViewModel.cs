@@ -466,6 +466,17 @@ public partial class ChatViewModel : ObservableObject
         Notify();
     }
 
+    /// <summary>退群：把群組從清單移除（不再收該群訊息）。</summary>
+    [RelayCommand]
+    private void RemoveGroup(DeviceGroup group)
+    {
+        if (group is null) return;
+        Groups.Remove(group);
+        _store.SaveGroups(Groups);
+        StatusMessage = $"已退出群組 {group.DisplayName}";
+        Notify();
+    }
+
     /// <summary>把指定位址設為傳送目標（聯絡人/群組點選用）</summary>
     [RelayCommand]
     private void SelectTarget(string idHex)

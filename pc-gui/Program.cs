@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -33,6 +34,9 @@ public sealed class MainForm : Form
     private readonly Label _deviceLbl;
     private readonly Label _posLbl;   // 裝置狀態下方就地顯示各節點定位（不洗版）
     private readonly TextBox _target;
+    private readonly TextBox _groupInput;          // 群組 ID 輸入（加入/退出）
+    private readonly Label _groupsLbl;             // 顯示已加入的群組
+    private readonly HashSet<ushort> _groups = new(); // 已加入的群組 ID（FFE0~FFEF）
     private readonly TextBox _log;
     private readonly TextBox _input;
     private readonly Button _sendBtn;
@@ -54,8 +58,8 @@ public sealed class MainForm : Form
         Font = new Font("Microsoft JhengHei UI", 10F);
         StartPosition = FormStartPosition.CenterScreen;
 
-        // ── 頂部：IP / 連線 / 裝置 ID / 目標 ──
-        var top = new Panel { Dock = DockStyle.Top, Height = 118 };
+        // ── 頂部：IP / 連線 / 裝置 ID / 目標 / 群組 ──
+        var top = new Panel { Dock = DockStyle.Top, Height = 150 };
 
         var ipLbl = new Label { Text = "裝置 IP", AutoSize = true, Location = new Point(10, 14) };
         _ip = new TextBox { Text = "192.168.4.1", Location = new Point(70, 11), Width = 110 };
@@ -73,7 +77,17 @@ public sealed class MainForm : Form
         _posLbl = new Label { Text = "", AutoSize = true, Location = new Point(10, 68), ForeColor = Color.FromArgb(0, 120, 0),
             Font = new Font("Microsoft JhengHei UI", 9F) };
 
-        top.Controls.AddRange(new Control[] { ipLbl, _ip, _connectBtn, tgtLbl, _target, tgtHint, _deviceLbl, _posLbl });
+        // 群組：加入/退出（FFE0~FFEF）。要發群組訊息就把「目標」打成該群組 ID。
+        var grpLbl = new Label { Text = "群組", AutoSize = true, Location = new Point(10, 96) };
+        _groupInput = new TextBox { Text = "", Location = new Point(55, 93), Width = 60 };
+        var joinBtn = new Button { Text = "加入", Location = new Point(120, 91), Width = 55 };
+        joinBtn.Click += (_, _) => JoinGroup();
+        var leaveBtn = new Button { Text = "退出", Location = new Point(180, 91), Width = 55 };
+        leaveBtn.Click += (_, _) => LeaveGroup();
+        _groupsLbl = new Label { Text = "已加入: (無)", AutoSize = true, Location = new Point(245, 96), ForeColor = Color.Gray };
+
+        top.Controls.AddRange(new Control[] { ipLbl, _ip, _connectBtn, tgtLbl, _target, tgtHint, _deviceLbl, _posLbl,
+            grpLbl, _groupInput, joinBtn, leaveBtn, _groupsLbl });
 
         // ── 對話記錄 ──
         _log = new TextBox
@@ -111,6 +125,35 @@ public sealed class MainForm : Form
     {
         if (_log.InvokeRequired) { _log.BeginInvoke((Action)(() => AppendLog(line))); return; }
         _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}\r\n");
+    }
+
+    // ── 群組加入/退出（F-021）。發群組訊息把「目標」打成群組 ID 即可。──
+    private static bool TryParseGroupId(string s, out ushort id)
+    {
+        id = 0;
+        var t = s?.Trim().Replace("0x", "", StringComparison.OrdinalIgnoreCase);
+        return !string.IsNullOrEmpty(t)
+            && ushort.TryParse(t, NumberStyles.HexNumber, null, out id)
+            && DstId.IsGroup(id);
+    }
+    private void JoinGroup()
+    {
+        if (!TryParseGroupId(_groupInput.Text, out var id)) { AppendLog("群組 ID 須為 FFE0~FFEF"); return; }
+        _groups.Add(id);
+        _groupInput.Clear();
+        UpdateGroupsLabel();
+        AppendLog($"已加入群組 0x{id:X4}");
+    }
+    private void LeaveGroup()
+    {
+        if (!TryParseGroupId(_groupInput.Text, out var id)) { AppendLog("輸入要退出的群組 ID（FFE0~FFEF）"); return; }
+        if (_groups.Remove(id)) { _groupInput.Clear(); UpdateGroupsLabel(); AppendLog($"已退出群組 0x{id:X4}"); }
+        else AppendLog($"未加入群組 0x{id:X4}");
+    }
+    private void UpdateGroupsLabel()
+    {
+        if (_groupsLbl.InvokeRequired) { _groupsLbl.BeginInvoke((Action)UpdateGroupsLabel); return; }
+        _groupsLbl.Text = _groups.Count == 0 ? "已加入: (無)" : "已加入: " + string.Join(", ", _groups.Select(g => $"0x{g:X4}"));
     }
 
     /// <summary>就地更新 GPS 定位列（只顯示握手那台自己的 GPS）。</summary>
@@ -248,6 +291,8 @@ public sealed class MainForm : Form
                 switch (pkt.Type)
                 {
                     case PacketType.Text:
+                        // 群組訊息只顯示「已加入該群」的(F-022);點對點/廣播照常
+                        if (DstId.IsGroup(pkt.DstId) && !_groups.Contains(pkt.DstId)) break;
                         AppendLog($"0x{pkt.SrcId:X4} → 0x{pkt.DstId:X4}：{Encoding.UTF8.GetString(pkt.Payload)}  (RSSI {rssi})");
                         // 點對點文字回 ACK ×3（避單發遺失）
                         if (DstId.IsUnicast(pkt.DstId))

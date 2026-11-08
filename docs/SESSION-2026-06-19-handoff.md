@@ -43,3 +43,9 @@
 ## 四、規格完成度（速覽）
 **文字/群組/Mesh中繼/SOS+GPS/定位/地圖/HMI/OTA/雙傳輸層/設定 全部完成且實機驗過。**
 語音 Android 端 **程式完成、待雙機實測**。未做=選配/後期:iOS、AES加密、離線訊息暫存、長訊息分包、F-035管理式洪泛、Grove感測、Meshtastic橋。
+
+## 2026-11-08 追記：pc-gui 改 net10 + 記住設定
+
+- **pc-gui 工具鏈改為 net10.0-windows7.0 + SDK 10.0.x**（使用者決定）。`pc-gui/global.json` 釘 `10.0.100 / latestFeature`，就近覆蓋 repo 根的 7.0.400；APP 仍是 net7 + SDK 7.0.400 不動。**公司機器要 build pc-gui 需另裝 SDK 10.0.100 以上**（APP 照舊裝 7.0.400）。
+- pc-gui 新增設定檔 `%LocalAppData%\LoRaPTT\winclient.json`：記住裝置 IP、目標、已加入的群組（加群/退群/關視窗時寫入，開啟時還原並在記錄列印「已還原群組」）。
+- 群組測試只需手機 + pc-gui：手機選群為目標；pc-gui 群組欄打 FFE0 →「加入」，「目標」欄也打 FFE0 即可互發；pc-gui 退群後該群訊息不再顯示（廣播 FFFF 照收）。

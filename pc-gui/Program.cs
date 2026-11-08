@@ -50,6 +50,16 @@ public sealed class MainForm : Form
     private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(3) };
     private int _seq;
 
+    // ── 持久化設定（IP / 目標 / 已加入群組），存 %LocalAppData%\LoRaPTT\winclient.json ──
+    private static readonly string SettingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LoRaPTT", "winclient.json");
+    private sealed class ClientSettings
+    {
+        public string Ip { get; set; } = "192.168.4.1";
+        public string Target { get; set; } = "FFFF";
+        public List<string> Groups { get; set; } = new();   // 十六進位字串，如 "FFE0"
+    }
+
     public MainForm()
     {
         Text = "LoRaPTT PC 客戶端";
@@ -116,7 +126,9 @@ public sealed class MainForm : Form
         Controls.Add(bottom);
         Controls.Add(top);
 
-        FormClosing += (_, _) => { _keepAlive?.Dispose(); _ackTimer?.Dispose(); _gpsTimer?.Dispose(); _cts?.Cancel(); _udp?.Close(); };
+        LoadSettings();   // 還原上次的 IP、目標與群組
+
+        FormClosing += (_, _) => { SaveSettings(); _keepAlive?.Dispose(); _ackTimer?.Dispose(); _gpsTimer?.Dispose(); _cts?.Cancel(); _udp?.Close(); };
     }
 
     private ushort NextSeq() => (ushort)(Interlocked.Increment(ref _seq) & 0xFFFF);
@@ -142,18 +154,54 @@ public sealed class MainForm : Form
         _groups.Add(id);
         _groupInput.Clear();
         UpdateGroupsLabel();
+        SaveSettings();
         AppendLog($"已加入群組 0x{id:X4}");
     }
     private void LeaveGroup()
     {
         if (!TryParseGroupId(_groupInput.Text, out var id)) { AppendLog("輸入要退出的群組 ID（FFE0~FFEF）"); return; }
-        if (_groups.Remove(id)) { _groupInput.Clear(); UpdateGroupsLabel(); AppendLog($"已退出群組 0x{id:X4}"); }
+        if (_groups.Remove(id)) { _groupInput.Clear(); UpdateGroupsLabel(); SaveSettings(); AppendLog($"已退出群組 0x{id:X4}"); }
         else AppendLog($"未加入群組 0x{id:X4}");
     }
     private void UpdateGroupsLabel()
     {
         if (_groupsLbl.InvokeRequired) { _groupsLbl.BeginInvoke((Action)UpdateGroupsLabel); return; }
         _groupsLbl.Text = _groups.Count == 0 ? "已加入: (無)" : "已加入: " + string.Join(", ", _groups.Select(g => $"0x{g:X4}"));
+    }
+
+    /// <summary>載入上次的 IP / 目標 / 已加入群組（檔案不存在或壞掉就用預設）。</summary>
+    private void LoadSettings()
+    {
+        try
+        {
+            if (!File.Exists(SettingsPath)) return;
+            var s = JsonSerializer.Deserialize<ClientSettings>(File.ReadAllText(SettingsPath));
+            if (s is null) return;
+            if (!string.IsNullOrWhiteSpace(s.Ip)) _ip.Text = s.Ip;
+            if (!string.IsNullOrWhiteSpace(s.Target)) _target.Text = s.Target;
+            foreach (var g in s.Groups)
+                if (TryParseGroupId(g, out var id)) _groups.Add(id);
+            UpdateGroupsLabel();
+            if (_groups.Count > 0) AppendLog($"已還原群組：{string.Join(", ", _groups.Select(g => $"0x{g:X4}"))}");
+        }
+        catch (Exception ex) { AppendLog($"讀取設定失敗（改用預設）：{ex.Message}"); }
+    }
+
+    /// <summary>加群/退群/關閉視窗時寫回設定檔。</summary>
+    private void SaveSettings()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+            var s = new ClientSettings
+            {
+                Ip = _ip.Text.Trim(),
+                Target = _target.Text.Trim(),
+                Groups = _groups.OrderBy(g => g).Select(g => g.ToString("X4")).ToList(),
+            };
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(s, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex) { AppendLog($"儲存設定失敗：{ex.Message}"); }
     }
 
     /// <summary>就地更新 GPS 定位列（只顯示握手那台自己的 GPS）。</summary>

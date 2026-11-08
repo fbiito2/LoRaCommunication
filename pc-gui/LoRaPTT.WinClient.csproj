@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net7.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows7.0</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -12,8 +12,7 @@
 
   <!-- 重用 MAUI App 的協定碼（link，不複製），確保位元級一致 -->
   <ItemGroup>
-    <Compile Include="..\app\LoRaPTT\Services\Protocol\*.cs"
-             Link="Protocol\%(Filename)%(Extension)" />
+    <Compile Include="..\app\LoRaPTT\Services\Protocol\*.cs" Link="Protocol\%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

@@ -15,7 +15,7 @@
 1. **每次對話開始前**：若與上次對話有一段時間間隔，必須先執行 `git pull` 確認是否有新的 commit，再開始工作
 2. **每次更新完成後**：將變更 commit 並推上 git（`git push`）
 3. **規格書**：完整功能規格見 `docs/SPEC.md`，開發時以規格書為準
-4. **🔒 工具鏈版本鎖定（禁止擅自升降版）**：APP 固定 **net7.0-*** + **SDK 7.0.400**（repo 根 `global.json` 已釘死）。**任何機器一律以此為準，禁止把專案升成 net8/9/10**。.NET 7 雖 EOL，但這是 6/7 實證可用的基準；新 SDK(10) 會拒 build net7（NETSDK1202），故每台開發機需裝 **SDK 7.0.400 + net7 maui-android workload**（JDK11 + Android API33，皆 net7 既有依賴）。歷史教訓：曾有一次把 csproj 升 net10 卻沒鎖 SDK，導致「公司能 build、家裡不能」、白耗數小時——`global.json` 就是防此再發生的鎖。**若某機器只有新 SDK，正解是補裝 SDK 7.0.400，不是升專案。**
+4. **🔒 工具鏈版本鎖定（禁止擅自升降版）**：APP 固定 **net7.0-*** + **SDK 7.0.400**（repo 根 `global.json` 已釘死）。**任何機器一律以此為準，禁止把專案升成 net8/9/10**。.NET 7 雖 EOL，但這是 6/7 實證可用的基準；新 SDK(10) 會拒 build net7（NETSDK1202），故每台開發機需裝 **SDK 7.0.400 + net7 maui-android workload**（JDK11 + Android API33，皆 net7 既有依賴）。歷史教訓：曾有一次把 csproj 升 net10 卻沒鎖 SDK，導致「公司能 build、家裡不能」、白耗數小時——`global.json` 就是防此再發生的鎖。**若某機器只有新 SDK，正解是補裝 SDK 7.0.400，不是升專案。** **唯一例外：`pc-gui/`（WinForms PC 客戶端）自 2026-11-08 起為 **net10.0-windows7.0 + SDK 10.0.x**——`pc-gui/global.json` 另釘 `10.0.100 / latestFeature`，就近覆蓋根目錄的 7.0.400，APP 不受影響。開發機要同時裝 SDK 7.0.400（APP）與 SDK 10.0.100+（pc-gui）；在 `pc-gui/` 下 `dotnet build` 會自動選 SDK 10。
 5. **韌體版本號必改**：**每次修改韌體（`firmware/`）都必須一併更新 `main.cpp` 的 `FW_VERSION`**（語意化版本，bug 修正進位 patch、新功能進位 minor），不可沿用舊版號。版號會由 `/version` 與握手 hello-ack 回報，是判斷裝置跑哪版的唯一依據；忘了改會誤判「已更新卻還是舊版」。
 
 ## 專案目標

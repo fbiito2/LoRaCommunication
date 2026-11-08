@@ -38,3 +38,4 @@ pc-client/obj/
 # PC GUI build output
 pc-gui/bin/
 pc-gui/obj/
+.vs/
